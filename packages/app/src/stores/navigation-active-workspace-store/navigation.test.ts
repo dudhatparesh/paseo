@@ -69,6 +69,17 @@ describe("workspace navigation", () => {
     expect(remembered).toEqual([{ serverId: "server-1", workspaceId: "workspace-a" }]);
   });
 
+  it("preserves an open intent on the canonical workspace route", () => {
+    const { deps, navigations, remembered } = createFakeDeps();
+
+    navigateToWorkspace("server-1", "workspace-a", deps, {
+      openIntent: "agent:agent-1",
+    });
+
+    expect(navigations).toEqual(["/h/server-1/workspace/workspace-a?open=agent%3Aagent-1"]);
+    expect(remembered).toEqual([{ serverId: "server-1", workspaceId: "workspace-a" }]);
+  });
+
   it("focuses the attention agent's tab when a workspace has one", () => {
     const workspace = {
       id: "workspace-a",

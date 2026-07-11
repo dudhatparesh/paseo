@@ -1,6 +1,7 @@
 import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
 import { pickAttentionAgent } from "@/utils/agent-attention";
 import {
+  buildHostWorkspaceOpenRoute,
   buildHostWorkspaceRoute,
   decodeWorkspaceIdFromPathSegment,
   parseHostWorkspaceRouteFromPathname,
@@ -25,6 +26,10 @@ export interface NavigateToWorkspaceDeps {
   openWorkspaceAgentTab: (workspaceKey: string, agentId: string) => void;
   rememberLastWorkspace: (selection: ActiveWorkspaceSelection) => void;
   navigateToRoute: (route: string) => void;
+}
+
+export interface NavigateToWorkspaceOptions {
+  openIntent?: string;
 }
 
 export interface NavigateToLastWorkspaceDeps extends NavigateToWorkspaceDeps {
@@ -74,6 +79,7 @@ export function navigateToWorkspace(
   serverId: string,
   workspaceId: string,
   deps: NavigateToWorkspaceDeps,
+  options: NavigateToWorkspaceOptions = {},
 ): void {
   const workspaces = deps.getSessionWorkspaces(serverId);
   const resolvedWorkspaceId = resolveWorkspaceMapKeyByIdentity({
@@ -91,7 +97,10 @@ export function navigateToWorkspace(
   }
 
   deps.rememberLastWorkspace({ serverId, workspaceId });
-  deps.navigateToRoute(buildHostWorkspaceRoute(serverId, workspaceId));
+  const route = options.openIntent
+    ? buildHostWorkspaceOpenRoute(serverId, workspaceId, options.openIntent)
+    : buildHostWorkspaceRoute(serverId, workspaceId);
+  deps.navigateToRoute(route);
 }
 
 export function navigateToLastWorkspace(deps: NavigateToLastWorkspaceDeps): boolean {

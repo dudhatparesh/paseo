@@ -12,6 +12,7 @@ import {
   navigateToWorkspace as navigateToWorkspacePure,
   parseActiveWorkspaceSelection,
   type NavigateToWorkspaceDeps,
+  type NavigateToWorkspaceOptions,
 } from "./navigation";
 import { useSessionStore } from "@/stores/session-store";
 import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
@@ -57,8 +58,12 @@ export function getIsLastWorkspaceSelectionHydrated(): boolean {
   return lastWorkspaceSelectionStore.isHydrated();
 }
 
-export function navigateToWorkspace(serverId: string, workspaceId: string) {
-  navigateToWorkspacePure(serverId, workspaceId, navigateDeps());
+export function navigateToWorkspace(
+  serverId: string,
+  workspaceId: string,
+  options?: NavigateToWorkspaceOptions,
+) {
+  navigateToWorkspacePure(serverId, workspaceId, navigateDeps(), options);
 }
 
 export function navigateToLastWorkspace(): boolean {
