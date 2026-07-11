@@ -461,13 +461,6 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
   useActiveWorktreeNewAction();
   useGlobalNewWorkspaceAction();
 
-  const sidebarChrome = (
-    <SidebarChrome
-      showSidebar={chromeEnabled && (isCompactLayout || !isFocusModeEnabled)}
-      keyboardShortcutsEnabled={keyboardShortcutsEnabled}
-    />
-  );
-
   const appContentMinimumWidth = resolveDesktopAppContentMinimum({
     isSettingsRoute: pathname.includes("/settings"),
     isWorkspaceExplorerOpen: pathname.includes("/workspace/") && isDesktopFileExplorerOpen,
@@ -485,6 +478,12 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
       viewportWidth,
     });
   const contentWindowChromeCorners = desktopSidebarRendered ? "top-right" : "both";
+  const sidebarChrome = (
+    <SidebarChrome
+      showSidebar={isCompactLayout ? chromeEnabled : desktopSidebarRendered}
+      keyboardShortcutsEnabled={keyboardShortcutsEnabled}
+    />
+  );
   const workspaceChrome = (
     <View style={rowStyle}>
       {!isCompactLayout ? (
