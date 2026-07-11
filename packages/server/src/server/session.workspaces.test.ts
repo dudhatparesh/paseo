@@ -4589,6 +4589,7 @@ test("refresh_agent_request leaves workspace archival independent when its direc
 test("refresh_agent_request does not recreate or unarchive a deleted worktree", async () => {
   const emitted: SessionOutboundMessage[] = [];
   const session = createSessionForWorkspaceTests({
+    appVersion: "0.1.105",
     onMessage: (message) => {
       if (isSessionOutboundMessage(message)) emitted.push(message);
     },
@@ -4791,7 +4792,7 @@ function createRecreateWorktreeRepo(): { tempDir: string; repoDir: string } {
   return { tempDir, repoDir };
 }
 
-test("refresh_agent_request leaves a real deleted worktree for explicit workspace recovery", async () => {
+test("legacy refresh_agent_request restores a real deleted worktree", async () => {
   const { tempDir, repoDir } = createRecreateWorktreeRepo();
   const branch = "feature/keep";
   execFileSync("git", ["branch", branch], { cwd: repoDir, stdio: "pipe" });
@@ -4814,6 +4815,7 @@ test("refresh_agent_request leaves a real deleted worktree for explicit workspac
 
   const emitted: SessionOutboundMessage[] = [];
   const session = createSessionForWorkspaceTests({
+    appVersion: "0.1.104",
     paseoHome,
     worktreesRoot,
     onMessage: (message) => {
@@ -4900,10 +4902,10 @@ test("refresh_agent_request leaves a real deleted worktree for explicit workspac
   });
 
   expect(findByType(emitted, "rpc_error")).toBeUndefined();
-  expect(existsSync(worktreePath)).toBe(false);
+  expect(existsSync(worktreePath)).toBe(true);
   expect(workspaces.get(workspaceId)?.workspaceId).toBe(workspaceId);
   expect(workspaces.get(workspaceId)?.cwd).toBe(worktreePath);
-  expect(workspaces.get(workspaceId)?.archivedAt).toBe("2026-03-10T00:00:00.000Z");
+  expect(workspaces.get(workspaceId)?.archivedAt).toBeNull();
 
   rmSync(tempDir, { recursive: true, force: true });
 });

@@ -1451,7 +1451,7 @@ export const WorkspaceRecoveryStateSchema = z.discriminatedUnion("kind", [
     kind: z.literal("recoverable"),
     workspaceId: z.string(),
     workspaceName: z.string(),
-    action: z.enum(["unarchive", "restore"]),
+    action: z.string(),
     branch: z.string().nullable(),
   }),
   z.object({
