@@ -4472,7 +4472,7 @@ export class Session {
         "fetch_workspaces_response_ready",
       );
       const snapshot = this.buildBootstrapSnapshot(payload.entries);
-      this.seedWorkspaceSubscriptionSnapshot(subscriptionId, payload.entries);
+      this.seedWorkspaceSubscriptionSnapshot(subscriptionId, request.filter, payload.entries);
 
       this.emit({
         type: "fetch_workspaces_response",
@@ -4535,10 +4535,13 @@ export class Session {
 
   private seedWorkspaceSubscriptionSnapshot(
     subscriptionId: string | null,
+    filter: FetchWorkspacesRequestFilter | undefined,
     entries: FetchWorkspacesResponseEntry[],
   ): void {
     const subscription = this.workspaceUpdatesSubscription;
-    if (!subscriptionId || subscription?.subscriptionId !== subscriptionId) return;
+    if (!subscription) return;
+    if (subscriptionId && subscription.subscriptionId !== subscriptionId) return;
+    if (!subscriptionId && !equal(subscription.filter, filter)) return;
     for (const entry of entries) {
       subscription.lastEmittedByWorkspaceId.set(entry.id, {
         kind: "upsert",
