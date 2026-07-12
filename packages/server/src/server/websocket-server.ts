@@ -1380,6 +1380,7 @@ export class VoiceAssistantWebSocketServer {
 
     this.sessions.delete(ws);
     connection.sockets.delete(ws);
+    connection.session.clearAgentTimelineSubscription(ws);
     this.socketIdentities.delete(ws);
 
     if (connection.sockets.size === 0) {
@@ -1748,7 +1749,7 @@ export class VoiceAssistantWebSocketServer {
     }
 
     const startMs = performance.now();
-    await activeConnection.session.handleMessage(message.message);
+    await activeConnection.session.handleMessage(message.message, ws);
     const durationMs = performance.now() - startMs;
     this.recordRequestLatency(message.message.type, durationMs);
 

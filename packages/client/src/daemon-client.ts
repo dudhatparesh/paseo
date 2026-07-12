@@ -4857,7 +4857,6 @@ export class DaemonClient {
           protocolVersion: 1,
           capabilities: {
             [CLIENT_CAPS.customModeIcons]: true,
-            [CLIENT_CAPS.selectiveAgentTimeline]: true,
             [CLIENT_CAPS.reasoningMergeEnum]: true,
             [CLIENT_CAPS.terminalReflowableSnapshot]: true,
             [CLIENT_CAPS.providerSubagents]: true,
