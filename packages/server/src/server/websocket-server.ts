@@ -1173,12 +1173,15 @@ export class VoiceAssistantWebSocketServer {
         existing.session.updateAppVersion(newAppVersion);
       }
       const newClientCapabilities = message.capabilities ?? null;
+      // COMPAT(selectiveAgentTimeline): added in v0.1.106. Every capable resumed
+      // hello resets membership before server_info so stale retained-session
+      // state cannot leak. Remove after 2027-01-12.
+      existing.session.updateClientCapabilities(newClientCapabilities);
       if (
         JSON.stringify(existing.clientCapabilities ?? null) !==
         JSON.stringify(newClientCapabilities ?? null)
       ) {
         existing.clientCapabilities = newClientCapabilities;
-        existing.session.updateClientCapabilities(newClientCapabilities);
         this.syncBrowserToolsClientRegistration(existing);
       }
       existing.sockets.add(ws);
@@ -1266,6 +1269,8 @@ export class VoiceAssistantWebSocketServer {
         workspacePinning: true,
         // COMPAT(workspaceGithubClone): added in v0.1.108, remove gate after 2027-01-13.
         workspaceGithubClone: true,
+        // COMPAT(selectiveAgentTimeline): added in v0.1.106, remove after 2027-01-12.
+        selectiveAgentTimeline: true,
       },
     };
   }
@@ -1994,21 +1999,36 @@ export class VoiceAssistantWebSocketServer {
     for (const [clientIndex, { ws }] of clientEntries.entries()) {
       const shouldNotify = clientIndex === plan.inAppRecipientIndex;
       const timestamp = new Date().toISOString();
-      const message = wrapSessionMessage({
-        type: "agent_stream",
-        payload: {
-          agentId: params.agentId,
-          event: {
-            type: "attention_required",
-            provider: params.provider,
-            reason: params.reason,
-            timestamp,
-            shouldNotify,
-            notification,
-          },
-          timestamp,
-        },
-      });
+      const connection = this.sessions.get(ws);
+      const attentionPayload = {
+        agentId: params.agentId,
+        reason: params.reason,
+        timestamp,
+        shouldNotify,
+        notification,
+      };
+      const message = wrapSessionMessage(
+        connection?.session.supports(CLIENT_CAPS.selectiveAgentTimeline)
+          ? {
+              type: "agent_attention_required",
+              payload: attentionPayload,
+            }
+          : {
+              type: "agent_stream",
+              payload: {
+                agentId: params.agentId,
+                event: {
+                  type: "attention_required",
+                  provider: params.provider,
+                  reason: params.reason,
+                  timestamp,
+                  shouldNotify,
+                  notification,
+                },
+                timestamp,
+              },
+            },
+      );
 
       this.sendToClient(ws, message);
     }
