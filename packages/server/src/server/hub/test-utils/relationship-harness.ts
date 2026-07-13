@@ -424,12 +424,19 @@ export class HubRelationshipHarness {
   private host = "";
   private readonly logs: string[] = [];
   private readonly providerPrompts: AgentPromptInput[] = [];
+  private failNextPromptStart = false;
   private observedEnrollments = 0;
   private observedSockets = 0;
   private reconcileRequests = 0;
   private readonly codex = new ControlledAgentClient(
     createTestAgentClients({
-      onStartTurn: (prompt) => this.providerPrompts.push(prompt),
+      onStartTurn: (prompt) => {
+        if (this.failNextPromptStart) {
+          this.failNextPromptStart = false;
+          throw new Error("Requested provider prompt startup failure");
+        }
+        this.providerPrompts.push(prompt);
+      },
     }).codex,
   );
 
@@ -532,6 +539,10 @@ export class HubRelationshipHarness {
 
   failRevocations(count: number): void {
     this.remote.failRevocations(count);
+  }
+
+  failNextProviderPromptStart(): void {
+    this.failNextPromptStart = true;
   }
 
   async socketDialed(): Promise<void> {

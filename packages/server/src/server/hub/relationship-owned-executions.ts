@@ -137,6 +137,7 @@ export class RelationshipOwnedExecutions implements HubExecutions {
         provider: input.model ? `${input.provider}/${input.model}` : input.provider,
         title: input.prompt,
         initialPrompt: input.prompt,
+        promptFailure: "throw",
         cwd: input.cwd,
         workspaceId: input.workspaceId,
         mode: input.modeId,
@@ -156,7 +157,11 @@ export class RelationshipOwnedExecutions implements HubExecutions {
         },
       });
     } catch (error) {
-      await this.cleanupFailedCreate({ createdWorktree, createdAgentId });
+      if (createdAgentId) {
+        await this.agentManager.closeAgent(createdAgentId);
+        await this.agentStorage.remove(createdAgentId);
+      }
+      await this.cleanupFailedCreate({ createdWorktree, createdAgentId: null });
       throw error;
     }
 

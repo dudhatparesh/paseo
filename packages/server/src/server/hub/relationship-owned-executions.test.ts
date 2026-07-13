@@ -53,3 +53,17 @@ test("a failed Hub create removes its auto-created worktree", async () => {
   expect(await hub.listedWorktrees()).toHaveLength(1);
   expect(await hub.durableOwnedAgentIds()).toEqual([]);
 });
+
+test("a Hub create fails when its initial prompt cannot start", async () => {
+  const hub = await launchRelationship();
+  hub.failNextProviderPromptStart();
+  hub.beginOwnedCreate("failed-prompt-create", "failed-prompt-execution");
+
+  const response = await hub.ownedCreateResult("failed-prompt-create");
+
+  expect(response).toMatchObject({
+    type: "hub.agent.create.response",
+    payload: { success: false, executionId: "failed-prompt-execution" },
+  });
+  expect(await hub.durableOwnedAgentIds()).toEqual([]);
+});
