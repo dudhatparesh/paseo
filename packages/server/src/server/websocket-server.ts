@@ -1344,6 +1344,8 @@ export class VoiceAssistantWebSocketServer {
         workspacePinning: true,
         // COMPAT(hubRelationship): added in v0.1.X, drop the gate when floor >= v0.1.X.
         hubRelationship: true,
+        // COMPAT(workspaceGithubClone): added in v0.1.108, remove gate after 2027-01-13.
+        workspaceGithubClone: true,
       },
     };
   }
