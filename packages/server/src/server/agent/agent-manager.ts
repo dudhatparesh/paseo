@@ -766,6 +766,10 @@ export class AgentManager {
     };
   }
 
+  subscriptionCount(): number {
+    return this.subscribers.size;
+  }
+
   listAgents(): ManagedAgent[] {
     return Array.from(this.agents.values())
       .filter((agent) => !agent.internal)

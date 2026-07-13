@@ -107,11 +107,17 @@ test("Hub create forwards worktree and auto-archive through the existing create 
   hub.beginOwnedCreate("worktree-create", "execution-worktree", {
     worktree: { mode: "branch-off", newBranch: "hub-created-worktree", base: "main" },
     autoArchive: true,
+    prompt: "sleep 30",
+    modeId: "always-ask",
   });
   const worktreeCreated = await hub.ownedCreateResult("worktree-create");
   const worktreeCwd = hub.latestCreatedCwd();
+  const permission = await hub.ownedPermissionRequest(worktreeCreated.payload.agentId!);
   const duringRun = await hub.worktreeState(worktreeCwd!);
-  const archive = await hub.waitForOwnedArchiveCompletion(worktreeCreated.payload.agentId!);
+  const archiveCompletion = hub.waitForOwnedArchiveCompletion(worktreeCreated.payload.agentId!);
+  await hub.allowOwnedPermission(worktreeCreated.payload.agentId!, permission.id);
+  await hub.ownedTurnCompletion(worktreeCreated.payload.agentId!);
+  const archive = await archiveCompletion;
   const afterArchive = await hub.worktreeState(worktreeCwd!);
 
   expect(worktreeCreated).toMatchObject({

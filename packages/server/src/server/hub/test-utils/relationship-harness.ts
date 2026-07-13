@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { existsSync, readFileSync, statSync, watch } from "node:fs";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
-import { networkInterfaces, tmpdir } from "node:os";
+import { networkInterfaces, platform, tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { Writable } from "node:stream";
@@ -424,6 +424,8 @@ export class HubRelationshipHarness {
   private host = "";
   private readonly logs: string[] = [];
   private readonly providerPrompts: AgentPromptInput[] = [];
+  private readonly cliProcesses = new Set<Promise<unknown>>();
+  private readonly claimedCliSockets = new Set<WebSocket>();
   private failNextPromptStart = false;
   private observedEnrollments = 0;
   private observedSockets = 0;
@@ -495,7 +497,7 @@ export class HubRelationshipHarness {
       socket.send(JSON.stringify({ type: "session", message }));
       responses.push((await this.nextSocketEnvelope(socket)).message);
     }
-    socket.close();
+    await this.closeClaimedCliSocket(socket);
     return responses;
   }
 
@@ -517,7 +519,7 @@ export class HubRelationshipHarness {
       }),
     );
     const response = (await this.nextSocketEnvelope(socket)).message;
-    socket.close();
+    await this.closeClaimedCliSocket(socket);
     return response;
   }
 
@@ -636,6 +638,16 @@ export class HubRelationshipHarness {
       .map((record) => record.id);
   }
 
+  activeOwnedAgentIds(): string[] {
+    return this.daemon!.agentManager.listAgents()
+      .filter((agent) => agent.owner?.kind === "hub")
+      .map((agent) => agent.id);
+  }
+
+  agentSubscriptionCount(): number {
+    return this.daemon!.agentManager.subscriptionCount();
+  }
+
   async hubExecutionIntentFiles(): Promise<string[]> {
     const directory = path.join(this.paseoHome, "hub-executions");
     return existsSync(directory) ? readdir(directory) : [];
@@ -751,11 +763,37 @@ export class HubRelationshipHarness {
     const listedPaths = stdout
       .split("\n")
       .filter((line) => line.startsWith("worktree "))
-      .map((line) => line.slice("worktree ".length));
+      .map((line) => this.comparablePath(line.slice("worktree ".length)));
     return {
       exists: existsSync(worktreePath),
-      listed: listedPaths.includes(worktreePath),
+      listed: listedPaths.includes(this.comparablePath(worktreePath)),
     };
+  }
+
+  async createBranch(branch: string): Promise<void> {
+    await execFileAsync("git", ["-C", this.root, "branch", branch]);
+  }
+
+  async currentBranch(cwd: string): Promise<string> {
+    const { stdout } = await execFileAsync("git", ["-C", cwd, "branch", "--show-current"]);
+    return stdout.trim();
+  }
+
+  async ownedPermissionRequest(agentId: string) {
+    const message = await this.latestSocket().socket.messageMatching(
+      (candidate): candidate is HubAgentStream =>
+        candidate.type === "hub.agent.stream" &&
+        candidate.payload.agentId === agentId &&
+        candidate.payload.event.type === "permission_requested",
+    );
+    if (message.payload.event.type !== "permission_requested") {
+      throw new Error(`Owned agent ${agentId} did not request permission`);
+    }
+    return message.payload.event.request;
+  }
+
+  async allowOwnedPermission(agentId: string, requestId: string): Promise<void> {
+    await this.daemon!.agentManager.respondToPermission(agentId, requestId, { behavior: "allow" });
   }
 
   async listedWorktrees(): Promise<string[]> {
@@ -1074,7 +1112,11 @@ export class HubRelationshipHarness {
 
   async close(): Promise<void> {
     await this.stopDaemon();
-    await rm(this.root, { recursive: true, force: true });
+    await Promise.allSettled(this.cliProcesses);
+    await Promise.all(
+      [...this.claimedCliSockets].map((socket) => this.closeClaimedCliSocket(socket)),
+    );
+    await this.removeRoot();
   }
 
   private async createHome(): Promise<void> {
@@ -1130,7 +1172,11 @@ export class HubRelationshipHarness {
     this.daemon = null;
   }
 
-  private async runCli(args: string[]): Promise<Record<string, unknown>> {
+  private runCli(args: string[]): Promise<Record<string, unknown>> {
+    return this.trackCli(this.executeCli(args));
+  }
+
+  private async executeCli(args: string[]): Promise<Record<string, unknown>> {
     const entrypoint = path.join(import.meta.dirname, "../../test-utils/hub-cli-entry.ts");
     const { stdout } = await execFileAsync(
       process.execPath,
@@ -1151,6 +1197,15 @@ export class HubRelationshipHarness {
     return parsed as Record<string, unknown>;
   }
 
+  private trackCli<T>(process: Promise<T>): Promise<T> {
+    this.cliProcesses.add(process);
+    void process.then(
+      () => this.cliProcesses.delete(process),
+      () => this.cliProcesses.delete(process),
+    );
+    return process;
+  }
+
   private nextSocketEnvelope(socket: WebSocket): Promise<{ message: SessionOutboundMessage }> {
     return new Promise((resolve, reject) => {
       socket.once("message", (data) => {
@@ -1169,6 +1224,7 @@ export class HubRelationshipHarness {
     options: { origin?: string } = {},
   ): Promise<WebSocket> {
     const socket = new WebSocket(url, options);
+    this.claimedCliSockets.add(socket);
     await new Promise<void>((resolve, reject) => {
       socket.once("open", resolve);
       socket.once("error", reject);
@@ -1183,6 +1239,32 @@ export class HubRelationshipHarness {
     );
     await this.nextSocketEnvelope(socket);
     return socket;
+  }
+
+  private async closeClaimedCliSocket(socket: WebSocket): Promise<void> {
+    this.claimedCliSockets.delete(socket);
+    if (socket.readyState === WebSocket.CLOSED) return;
+    const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
+    socket.terminate();
+    await closed;
+  }
+
+  private comparablePath(value: string): string {
+    const normalized = path.normalize(path.resolve(value));
+    return platform() === "win32" ? normalized.toLowerCase() : normalized;
+  }
+
+  private async removeRoot(): Promise<void> {
+    const attempts = platform() === "win32" ? 10 : 1;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        await rm(this.root, { recursive: true, force: true });
+        return;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt === attempts) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+      }
+    }
   }
 
   private latestSocket(): SocketAttempt {

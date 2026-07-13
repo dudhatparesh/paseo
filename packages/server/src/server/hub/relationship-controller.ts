@@ -211,6 +211,8 @@ export class HubRelationshipController implements HubRelationshipManagement {
       if (normalizeHubUrl(input.hubUrl) !== this.record.relationship.hubOrigin) {
         throw new Error("A pending Hub enrollment already exists for a different Hub");
       }
+      this.record = { ...this.record, enrollment: { token: input.token } };
+      this.persist(this.record);
       await this.tryEnrollment(this.record);
       return this.status();
     }

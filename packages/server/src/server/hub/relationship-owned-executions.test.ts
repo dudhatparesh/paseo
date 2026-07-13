@@ -54,16 +54,79 @@ test("a failed Hub create removes its auto-created worktree", async () => {
   expect(await hub.durableOwnedAgentIds()).toEqual([]);
 });
 
-test("a Hub create fails when its initial prompt cannot start", async () => {
+test("failed Hub auto-archive creates release their lifecycle subscriptions", async () => {
   const hub = await launchRelationship();
-  hub.failNextProviderPromptStart();
-  hub.beginOwnedCreate("failed-prompt-create", "failed-prompt-execution");
+  const subscriptionBaseline = hub.agentSubscriptionCount();
 
-  const response = await hub.ownedCreateResult("failed-prompt-create");
+  hub.failNextProviderPromptStart();
+  hub.beginOwnedCreate("failed-prompt-create-1", "failed-prompt-execution-1", {
+    autoArchive: true,
+    worktree: { mode: "branch-off", newBranch: "failed-prompt-1" },
+  });
+  const first = await hub.ownedCreateResult("failed-prompt-create-1");
+
+  expect(first).toMatchObject({
+    type: "hub.agent.create.response",
+    payload: { success: false, executionId: "failed-prompt-execution-1" },
+  });
+  expect(hub.activeOwnedAgentIds()).toEqual([]);
+  expect(await hub.durableOwnedAgentIds()).toEqual([]);
+  expect(await hub.listedWorktrees()).toHaveLength(1);
+  expect(hub.agentSubscriptionCount()).toBe(subscriptionBaseline);
+
+  hub.failNextProviderPromptStart();
+  hub.beginOwnedCreate("failed-prompt-create-2", "failed-prompt-execution-2", {
+    autoArchive: true,
+    worktree: { mode: "branch-off", newBranch: "failed-prompt-2" },
+  });
+  const second = await hub.ownedCreateResult("failed-prompt-create-2");
+
+  expect(second).toMatchObject({
+    type: "hub.agent.create.response",
+    payload: { success: false, executionId: "failed-prompt-execution-2" },
+  });
+  expect(hub.activeOwnedAgentIds()).toEqual([]);
+  expect(await hub.durableOwnedAgentIds()).toEqual([]);
+  expect(await hub.listedWorktrees()).toHaveLength(1);
+  expect(hub.agentSubscriptionCount()).toBe(subscriptionBaseline);
+});
+
+test("Hub checkout uses the requested branch ref", async () => {
+  const hub = await launchRelationship();
+  await hub.createBranch("existing-hub-branch");
+  hub.beginOwnedCreate("checkout-create", "checkout-execution", {
+    worktree: { mode: "checkout-branch", branch: "existing-hub-branch" },
+  });
+
+  const response = await hub.ownedCreateResult("checkout-create");
 
   expect(response).toMatchObject({
     type: "hub.agent.create.response",
-    payload: { success: false, executionId: "failed-prompt-execution" },
+    payload: { success: true, executionId: "checkout-execution" },
   });
-  expect(await hub.durableOwnedAgentIds()).toEqual([]);
+  expect(await hub.currentBranch(hub.latestCreatedCwd()!)).toBe("existing-hub-branch");
+});
+
+test("failed create never archives a reused worktree", async () => {
+  const hub = await launchRelationship();
+  hub.beginOwnedCreate("original-create", "original-execution", {
+    worktree: { mode: "branch-off", newBranch: "shared-hub-worktree" },
+  });
+  const original = await hub.ownedCreateResult("original-create");
+  const worktreeCwd = original.payload.agent?.cwd;
+  expect(worktreeCwd).toEqual(expect.any(String));
+  await hub.ownedTurnCompletion(original.payload.agentId!);
+
+  hub.failNextProviderPromptStart();
+  hub.beginOwnedCreate("reused-create", "reused-execution", {
+    autoArchive: true,
+    worktree: { mode: "branch-off", newBranch: "shared-hub-worktree" },
+  });
+  const reused = await hub.ownedCreateResult("reused-create");
+
+  expect(reused).toMatchObject({
+    type: "hub.agent.create.response",
+    payload: { success: false, executionId: "reused-execution" },
+  });
+  expect(await hub.worktreeState(worktreeCwd!)).toEqual({ exists: true, listed: true });
 });

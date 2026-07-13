@@ -6,6 +6,7 @@ import type {
 
 import type { AgentManager, AgentManagerEvent, ManagedAgent } from "../agent/agent-manager.js";
 import type { AgentStorage, StoredAgentRecord } from "../agent/agent-storage.js";
+import type { LifecycleRegistration } from "../agent/create-agent-lifecycle-dispatch.js";
 import type { BoundCreateAgentCommand } from "../agent/create-agent/create.js";
 import type { CreatePaseoWorktreeWorkflowResult } from "../worktree-session.js";
 import { buildStoredAgentPayload } from "../agent/agent-projections.js";
@@ -49,7 +50,7 @@ interface RelationshipOwnedExecutionsOptions {
   registerAutoArchive?: (input: {
     agentId: string;
     createdWorktree: CreatePaseoWorktreeWorkflowResult | null;
-  }) => void;
+  }) => LifecycleRegistration;
   cleanupFailedCreate?: (input: {
     createdWorktree: CreatePaseoWorktreeWorkflowResult | null;
     createdAgentId: string | null;
@@ -71,7 +72,7 @@ export class RelationshipOwnedExecutions implements HubExecutions {
   private readonly registerAutoArchive: (input: {
     agentId: string;
     createdWorktree: CreatePaseoWorktreeWorkflowResult | null;
-  }) => void;
+  }) => LifecycleRegistration;
   private readonly cleanupFailedCreate: NonNullable<
     RelationshipOwnedExecutionsOptions["cleanupFailedCreate"]
   >;
@@ -81,7 +82,8 @@ export class RelationshipOwnedExecutions implements HubExecutions {
     this.agentManager = options.agentManager;
     this.agentStorage = options.agentStorage;
     this.createAgentCommand = options.createAgent;
-    this.registerAutoArchive = options.registerAutoArchive ?? (() => undefined);
+    this.registerAutoArchive =
+      options.registerAutoArchive ?? (() => ({ cancel: async () => undefined }));
     this.cleanupFailedCreate = options.cleanupFailedCreate ?? (async () => undefined);
   }
 
@@ -130,6 +132,7 @@ export class RelationshipOwnedExecutions implements HubExecutions {
 
     let createdWorktree: CreatePaseoWorktreeWorkflowResult | null = null;
     let createdAgentId: string | null = null;
+    let autoArchiveRegistration: LifecycleRegistration = { cancel: async () => undefined };
     let result: Awaited<ReturnType<BoundCreateAgentCommand>>;
     try {
       result = await this.createAgentCommand({
@@ -153,15 +156,26 @@ export class RelationshipOwnedExecutions implements HubExecutions {
         },
         onCreated: (created) => {
           createdAgentId = created.agentId;
-          if (input.autoArchive === true) this.registerAutoArchive(created);
+          if (input.autoArchive === true) {
+            autoArchiveRegistration = this.registerAutoArchive({
+              ...created,
+              createdWorktree: ownedCreatedWorktree(created.createdWorktree),
+            });
+          }
         },
       });
     } catch (error) {
-      if (createdAgentId) {
+      await autoArchiveRegistration.cancel();
+      if (createdAgentId && this.agentManager.getAgent(createdAgentId)) {
         await this.agentManager.closeAgent(createdAgentId);
+      }
+      await this.cleanupFailedCreate({
+        createdWorktree: ownedCreatedWorktree(createdWorktree),
+        createdAgentId: null,
+      });
+      if (createdAgentId) {
         await this.agentStorage.remove(createdAgentId);
       }
-      await this.cleanupFailedCreate({ createdWorktree, createdAgentId: null });
       throw error;
     }
 
@@ -237,6 +251,12 @@ export class RelationshipOwnedExecutions implements HubExecutions {
   }
 }
 
+function ownedCreatedWorktree(
+  worktree: CreatePaseoWorktreeWorkflowResult | null,
+): CreatePaseoWorktreeWorkflowResult | null {
+  return worktree?.created === true ? worktree : null;
+}
+
 function toCreateAgentWorktree(target: CreateAgentWorktreeTarget | undefined) {
   if (!target) return undefined;
   if (target.mode === "branch-off") {
@@ -247,7 +267,7 @@ function toCreateAgentWorktree(target: CreateAgentWorktreeTarget | undefined) {
     };
   }
   if (target.mode === "checkout-branch") {
-    return { branchName: target.branch, action: "checkout" as const };
+    return { refName: target.branch, action: "checkout" as const };
   }
   return { githubPrNumber: target.prNumber, action: "checkout" as const };
 }

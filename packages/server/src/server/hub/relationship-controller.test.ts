@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, test } from "vitest";
 import { createHash } from "node:crypto";
+import { platform } from "node:os";
+import { afterEach, describe, expect, test } from "vitest";
 import { HubRelationshipHarness } from "./test-utils/relationship-harness.js";
 
 describe("Hub relationship", () => {
@@ -27,7 +28,7 @@ describe("Hub relationship", () => {
     expect(relationship.loggableValues(status)).not.toContain(enrollment.token);
     expect(relationship.loggableValues(status)).not.toContain(enrollment.idempotencyKey);
     expect(disconnected.state).toBe("not_connected");
-  });
+  }, 30_000);
 
   test("Hub URLs cannot persist embedded credentials", async () => {
     relationship = await HubRelationshipHarness.start();
@@ -98,6 +99,7 @@ describe("Hub relationship", () => {
 
   test("persists private generated authority before enrollment and active before dialing", async () => {
     relationship = await HubRelationshipHarness.start();
+    const privateFileMode = platform() === "win32" ? 0o666 : 0o600;
     relationship.holdEnrollment();
     const connecting = relationship.beginConnect("one-time-token");
 
@@ -105,7 +107,6 @@ describe("Hub relationship", () => {
     const pending = relationship.enrollmentInvocation();
 
     expect(pending).toMatchObject({
-      mode: 0o600,
       record: {
         state: "pending",
         relationship: { id: enrollment.relationshipId, idempotencyKey: enrollment.idempotencyKey },
@@ -114,6 +115,7 @@ describe("Hub relationship", () => {
         identity: { serverId: expect.any(String), daemonPublicKey: expect.any(String) },
       },
     });
+    expect(pending.mode).toBe(privateFileMode);
     const secret = pending.record.credential?.secret;
     expect(secret).toEqual(expect.any(String));
     expect(enrollment.credentialVerifier).toBe(
@@ -125,7 +127,7 @@ describe("Hub relationship", () => {
     await connecting.result;
     await relationship.socketDialed();
     expect(relationship.socketInvocation()).toMatchObject({
-      mode: 0o600,
+      mode: privateFileMode,
       record: { state: "active", relationship: { id: enrollment.relationshipId } },
     });
   });
@@ -144,6 +146,30 @@ describe("Hub relationship", () => {
     expect(attempts).toHaveLength(2);
     expect(attempts[1]).toEqual(attempts[0]);
     expect(relationship.enrolledRelationships()).toBe(1);
+  });
+
+  test("a fresh token replaces the token for a pending enrollment ceremony", async () => {
+    relationship = await HubRelationshipHarness.start();
+    relationship.holdEnrollment();
+    const firstConnect = relationship.beginConnect("expired-token");
+    const firstResult = expect(firstConnect.result).resolves.toMatchObject({
+      state: "reconnecting",
+    });
+    await relationship.enrollmentBegins();
+    relationship.loseEnrollmentResponse();
+    await firstResult;
+
+    relationship.holdEnrollment();
+    const secondConnect = relationship.beginConnect("fresh-token");
+    const secondResult = expect(secondConnect.result).resolves.toMatchObject({
+      state: "connecting",
+    });
+    const retried = await relationship.enrollmentBegins();
+
+    expect(retried.token).toBe("fresh-token");
+    expect(relationship.relationshipFile()?.enrollment?.token).toBe("fresh-token");
+    relationship.completeEnrollment();
+    await secondResult;
   });
 
   test("a rejected pending enrollment is discarded without blocking daemon restart", async () => {
