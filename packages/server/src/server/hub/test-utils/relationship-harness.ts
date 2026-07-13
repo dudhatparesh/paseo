@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, readFileSync, statSync, watch } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync, watch } from "node:fs";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { networkInterfaces, platform, tmpdir } from "node:os";
 import path from "node:path";
@@ -446,7 +446,7 @@ export class HubRelationshipHarness {
   private readonly providerPrompts: AgentPromptInput[] = [];
   private readonly cliProcesses = new Set<Promise<unknown>>();
   private readonly claimedCliSockets = new Set<WebSocket>();
-  private failNextPromptStart = false;
+  private readonly promptsToFail = new Set<string>();
   private failNextSessionClose = false;
   private observedEnrollments = 0;
   private observedSockets = 0;
@@ -459,8 +459,8 @@ export class HubRelationshipHarness {
         throw new Error("Requested provider session close failure");
       },
       onStartTurn: (prompt) => {
-        if (this.failNextPromptStart) {
-          this.failNextPromptStart = false;
+        const promptText = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
+        if (this.promptsToFail.delete(promptText)) {
           throw new Error("Requested provider prompt startup failure");
         }
         this.providerPrompts.push(prompt);
@@ -594,8 +594,8 @@ export class HubRelationshipHarness {
     this.remote.failRevocations(count);
   }
 
-  failNextProviderPromptStart(): void {
-    this.failNextPromptStart = true;
+  failProviderPromptStart(prompt = "Create through the Hub"): void {
+    this.promptsToFail.add(prompt);
   }
 
   failNextProviderSessionClose(): void {
@@ -1305,7 +1305,14 @@ export class HubRelationshipHarness {
   }
 
   private comparablePath(value: string): string {
-    const normalized = path.normalize(path.resolve(value));
+    const resolved = path.resolve(value);
+    let canonical = resolved;
+    try {
+      canonical = realpathSync.native(resolved);
+    } catch {
+      // An archived worktree no longer exists, so compare its normalized target path.
+    }
+    const normalized = path.normalize(canonical);
     return platform() === "win32" ? normalized.toLowerCase() : normalized;
   }
 
