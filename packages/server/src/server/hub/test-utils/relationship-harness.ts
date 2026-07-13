@@ -1043,7 +1043,7 @@ export class HubRelationshipHarness {
   }
 
   private async runCli(args: string[]): Promise<Record<string, unknown>> {
-    const entrypoint = path.join(import.meta.dirname, "hub-cli-entry.ts");
+    const entrypoint = path.join(import.meta.dirname, "../../test-utils/hub-cli-entry.ts");
     const { stdout } = await execFileAsync(
       process.execPath,
       ["--import", "tsx", entrypoint, ...args, "--host", this.host, "--json"],
