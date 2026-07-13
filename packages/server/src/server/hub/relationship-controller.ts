@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import type pino from "pino";
 import { z } from "zod";
@@ -40,10 +40,17 @@ const PendingSchema = z.object({
 });
 const ActiveSchema = z.object({
   version: z.literal(1),
-  state: z.enum(["active", "disconnecting"]),
+  state: z.literal("active"),
   relationship: RelationshipSchema,
   credential: CredentialSchema,
   transport: TransportSchema,
+});
+const DisconnectingSchema = z.object({
+  version: z.literal(1),
+  state: z.literal("disconnecting"),
+  relationship: RelationshipSchema,
+  credential: CredentialSchema,
+  transport: TransportSchema.optional(),
 });
 const RevokedSchema = z.object({
   version: z.literal(1),
@@ -52,9 +59,15 @@ const RevokedSchema = z.object({
   transport: TransportSchema.optional(),
   reason: z.string().optional(),
 });
-const RecordSchema = z.discriminatedUnion("state", [PendingSchema, ActiveSchema, RevokedSchema]);
+const RecordSchema = z.discriminatedUnion("state", [
+  PendingSchema,
+  ActiveSchema,
+  DisconnectingSchema,
+  RevokedSchema,
+]);
 type PendingRecord = z.infer<typeof PendingSchema>;
 type ActiveRecord = z.infer<typeof ActiveSchema>;
+type DisconnectingRecord = z.infer<typeof DisconnectingSchema>;
 type RevokedRecord = z.infer<typeof RevokedSchema>;
 type HubRelationshipRecord = z.infer<typeof RecordSchema>;
 
@@ -190,6 +203,10 @@ export class HubRelationshipController implements HubRelationshipManagement {
     };
   }
 
+  hasReconnectableRelationship(relationshipId: string): boolean {
+    return this.record?.state === "active" && this.record.relationship.id === relationshipId;
+  }
+
   async connect(input: { hubUrl: string; token: string }): Promise<HubRelationshipStatus> {
     if (this.record?.state === "pending") {
       if (normalizeHubUrl(input.hubUrl) !== this.record.relationship.hubOrigin) {
@@ -239,11 +256,13 @@ export class HubRelationshipController implements HubRelationshipManagement {
         warning: "Local Hub credential removed; remote revocation may remain pending.",
       };
     }
-    if (this.record.state === "pending") {
-      this.remove();
-      return { status: this.status() };
-    }
-    const disconnecting: ActiveRecord = { ...this.record, state: "disconnecting" };
+    const disconnecting: DisconnectingRecord = {
+      version: 1,
+      state: "disconnecting",
+      relationship: this.record.relationship,
+      credential: this.record.credential,
+      ...(this.record.state === "active" ? { transport: this.record.transport } : {}),
+    };
     this.persist(disconnecting);
     this.record = disconnecting;
     this.state = "disconnecting";
@@ -365,7 +384,7 @@ export class HubRelationshipController implements HubRelationshipManagement {
     this.schedule(() => void this.tryEnrollment(record));
   }
 
-  private async tryRevocation(record: ActiveRecord): Promise<void> {
+  private async tryRevocation(record: DisconnectingRecord): Promise<void> {
     const generation = this.generation;
     try {
       await this.options.remote.revoke({
@@ -433,7 +452,22 @@ export class HubRelationshipController implements HubRelationshipManagement {
 
   private load(): HubRelationshipRecord | null {
     if (!existsSync(this.filePath)) return null;
-    const record = RecordSchema.parse(JSON.parse(readFileSync(this.filePath, "utf8")));
+    let record: HubRelationshipRecord;
+    try {
+      record = RecordSchema.parse(JSON.parse(readFileSync(this.filePath, "utf8")));
+    } catch (error) {
+      const quarantinePath = path.join(
+        path.dirname(this.filePath),
+        `hub-relationship.invalid-${this.clock.now().getTime()}-${randomUUID()}.json`,
+      );
+      renameSync(this.filePath, quarantinePath);
+      ensurePrivateFile(quarantinePath);
+      this.options.logger.error(
+        { err: error, quarantinePath },
+        "Quarantined invalid Hub relationship authority",
+      );
+      return null;
+    }
     ensurePrivateFile(this.filePath);
     return record;
   }

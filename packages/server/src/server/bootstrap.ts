@@ -1520,7 +1520,9 @@ export async function createPaseoDaemon(
     // Freeze both ingress and registration before taking the agent closure snapshot.
     wsServer?.prepareForShutdown();
     agentManager.prepareForShutdown();
-    await closeAllAgents(logger, agentManager);
+    await closeAllAgents(logger, agentManager, (relationshipId) =>
+      hubRelationships.hasReconnectableRelationship(relationshipId),
+    );
     await agentManager.flushForShutdown().catch(() => undefined);
     detachAgentStoragePersistence();
     await agentStorage.flush().catch(() => undefined);
@@ -1564,13 +1566,19 @@ export async function createPaseoDaemon(
   };
 }
 
-async function closeAllAgents(logger: Logger, agentManager: AgentManager): Promise<void> {
+async function closeAllAgents(
+  logger: Logger,
+  agentManager: AgentManager,
+  hasReconnectableHubRelationship: (relationshipId: string) => boolean,
+): Promise<void> {
   const agents = agentManager.listAgents();
   await Promise.all(
     agents.map(async (agent) => {
       try {
         await agentManager.closeAgent(agent.id, {
-          persistClosedState: agent.owner?.kind !== "hub",
+          persistClosedState:
+            agent.owner?.kind !== "hub" ||
+            !hasReconnectableHubRelationship(agent.owner.relationshipId),
         });
       } catch (err) {
         logger.error({ err, agentId: agent.id }, "Failed to close agent");

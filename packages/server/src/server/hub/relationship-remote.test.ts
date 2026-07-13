@@ -50,6 +50,31 @@ test("transient revocation failures remain retryable", async () => {
   ).rejects.toThrow("Hub revocation failed (503)");
 });
 
+test.each(["enrollment", "revocation"])("%s HTTP calls are bounded", async (operation) => {
+  const hubOrigin = await startStalledHub();
+  const remote = new DirectHubRelationshipRemote({ requestTimeoutMs: 25 });
+
+  const request =
+    operation === "enrollment"
+      ? remote.enroll({
+          relationshipId: "relationship-1",
+          idempotencyKey: "ceremony-1",
+          hubOrigin,
+          token: "token",
+          serverId: "server-1",
+          daemonPublicKey: "public-key",
+          credentialVerifier: "verifier",
+          scopes: ["hub.*"],
+        })
+      : remote.revoke({
+          relationshipId: "relationship-1",
+          hubOrigin,
+          credential: "credential",
+        });
+
+  await expect(request).rejects.toThrow("Hub request timed out");
+});
+
 test.each([401, 403] as const)(
   "socket authentication status %s is terminal and releases the failed upgrade",
   async (status) => {
@@ -155,6 +180,17 @@ async function startHubReturning(status: number): Promise<string> {
   const server = createServer((_request, response) => {
     response.writeHead(status).end();
   });
+  openServers.push(server);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address() as AddressInfo;
+  return `http://127.0.0.1:${address.port}`;
+}
+
+async function startStalledHub(): Promise<string> {
+  const server = createServer(() => undefined);
   openServers.push(server);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);

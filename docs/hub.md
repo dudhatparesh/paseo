@@ -18,7 +18,8 @@ WebSocket without pairing again. The current foundation supports one Hub relatio
 Only a trusted session arriving through a server-observed local, non-browser daemon transport may
 run the `hub.relationship.connect`, `hub.relationship.get_status`, and
 `hub.relationship.disconnect` RPCs. Remote, relay, browser-origin, and Hub sessions cannot manage
-the relationship. A hello message's `clientType` is descriptive and grants no authority.
+the relationship. The CLI also rejects an explicit non-loopback connect target before sending the
+one-time token. A hello message's `clientType` is descriptive and grants no authority.
 
 ## Hub session scope
 
@@ -57,8 +58,9 @@ scopes, and a sanitized reason for status reporting.
 
 `paseo hub disconnect` disables socket reconnect before requesting remote revocation. If the Hub is
 offline, the daemon persists `disconnecting` and retries revocation across daemon restarts without
-opening a Hub socket. `--force` removes local authority immediately and warns that remote revocation
-may still be pending.
+opening a Hub socket. This also covers an enrollment whose request may have succeeded but whose
+response was lost. `--force` removes local authority immediately and warns that remote revocation may
+still be pending.
 
 ## Cross-repository dependency
 

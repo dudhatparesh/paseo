@@ -62,39 +62,54 @@ const EnrollmentResultSchema = z.object({
 });
 
 export class DirectHubRelationshipRemote implements HubRelationshipRemote {
+  private readonly requestTimeoutMs: number;
+
+  constructor(options: { requestTimeoutMs?: number } = {}) {
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 15_000;
+  }
+
   async enroll(input: HubEnrollment): Promise<HubEnrollmentResult> {
-    const response = await fetch(`${input.hubOrigin}/api/daemon-relationships/enroll`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${input.token}`,
-      },
-      body: JSON.stringify({
-        relationshipId: input.relationshipId,
-        idempotencyKey: input.idempotencyKey,
-        serverId: input.serverId,
-        daemonPublicKey: input.daemonPublicKey,
-        credentialVerifier: input.credentialVerifier,
-        scopes: input.scopes,
-      }),
-    });
-    if (!response.ok) {
-      if (response.status >= 400 && response.status < 500) {
-        throw new HubEnrollmentRejectedError(response.status);
+    return this.withRequestTimeout(async (signal) => {
+      const response = await fetch(`${input.hubOrigin}/api/daemon-relationships/enroll`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${input.token}`,
+        },
+        body: JSON.stringify({
+          relationshipId: input.relationshipId,
+          idempotencyKey: input.idempotencyKey,
+          serverId: input.serverId,
+          daemonPublicKey: input.daemonPublicKey,
+          credentialVerifier: input.credentialVerifier,
+          scopes: input.scopes,
+        }),
+        signal,
+      });
+      if (!response.ok) {
+        if (response.status >= 400 && response.status < 500) {
+          throw new HubEnrollmentRejectedError(response.status);
+        }
+        throw new Error(`Hub enrollment failed (${response.status})`);
       }
-      throw new Error(`Hub enrollment failed (${response.status})`);
-    }
-    return EnrollmentResultSchema.parse(await response.json());
+      return EnrollmentResultSchema.parse(await response.json());
+    });
   }
 
   async revoke(input: HubRevocation): Promise<void> {
-    const response = await fetch(
-      `${input.hubOrigin}/api/daemon-relationships/${encodeURIComponent(input.relationshipId)}`,
-      { method: "DELETE", headers: { authorization: `Bearer ${input.credential}` } },
-    );
-    if (!response.ok && ![401, 403, 404].includes(response.status)) {
-      throw new Error(`Hub revocation failed (${response.status})`);
-    }
+    await this.withRequestTimeout(async (signal) => {
+      const response = await fetch(
+        `${input.hubOrigin}/api/daemon-relationships/${encodeURIComponent(input.relationshipId)}`,
+        {
+          method: "DELETE",
+          headers: { authorization: `Bearer ${input.credential}` },
+          signal,
+        },
+      );
+      if (!response.ok && ![401, 403, 404].includes(response.status)) {
+        throw new Error(`Hub revocation failed (${response.status})`);
+      }
+    });
   }
 
   openSocket(input: HubSocketCredentials, events: HubSocketEvents): HubSocketConnection {
@@ -133,5 +148,19 @@ export class DirectHubRelationshipRemote implements HubRelationshipRemote {
       events.failed(error);
     });
     return socket;
+  }
+
+  private async withRequestTimeout<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+    timeout.unref?.();
+    try {
+      return await operation(controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error("Hub request timed out", { cause: error });
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 }

@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { existsSync, readFileSync, statSync, watch } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { networkInterfaces, tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -993,6 +993,10 @@ export class HubRelationshipHarness {
     return this.remote.revocations.length;
   }
 
+  latestRevocation(): HubRevocation | null {
+    return this.remote.revocations.at(-1) ?? null;
+  }
+
   enrollmentAttempts(): HubEnrollment[] {
     return this.remote.enrollments.map((input) => ({ ...input, scopes: input.scopes.slice() }));
   }
@@ -1025,6 +1029,25 @@ export class HubRelationshipHarness {
 
   relationshipFileMode(): number {
     return statSync(path.join(this.paseoHome, "hub-relationship.json")).mode & 0o777;
+  }
+
+  async corruptRelationshipFile(contents = "{not-json"): Promise<void> {
+    await this.stopDaemon();
+    await writeFile(path.join(this.paseoHome, "hub-relationship.json"), contents, "utf8");
+  }
+
+  async quarantinedRelationshipFiles(): Promise<string[]> {
+    return (await readdir(this.paseoHome)).filter((file) =>
+      file.startsWith("hub-relationship.invalid-"),
+    );
+  }
+
+  async startStoppedDaemon(): Promise<void> {
+    await this.startDaemon();
+  }
+
+  async storedOwnedStatus(agentId: string): Promise<string | null> {
+    return (await this.daemon!.agentStorage.get(agentId))?.lastStatus ?? null;
   }
 
   private captureRelationship(): RelationshipInvocationSnapshot {

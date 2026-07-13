@@ -150,6 +150,48 @@ describe("Hub relationship", () => {
     expect(relationship.relationshipFile()).toBeNull();
   });
 
+  test.each(["{not-json", JSON.stringify({ version: 1, state: "unknown" })])(
+    "an invalid relationship file is quarantined without blocking daemon startup",
+    async (contents) => {
+      relationship = await HubRelationshipHarness.start();
+      await relationship.corruptRelationshipFile(contents);
+
+      await relationship.startStoppedDaemon();
+
+      expect(await relationship.status()).toMatchObject({ state: "not_connected" });
+      expect(relationship.relationshipFile()).toBeNull();
+      expect(await relationship.quarantinedRelationshipFiles()).toHaveLength(1);
+    },
+  );
+
+  test("disconnect revokes an ambiguous pending enrollment before removing local authority", async () => {
+    relationship = await HubRelationshipHarness.start();
+    relationship.holdEnrollment();
+    const connecting = relationship.beginConnect("one-time-token");
+    const enrollment = await relationship.enrollmentBegins();
+    const credential = relationship.relationshipFile()?.credential?.secret;
+    relationship.loseEnrollmentResponse();
+    await connecting.result;
+    relationship.failRevocations(2);
+
+    const disconnected = await relationship.disconnect();
+    expect(disconnected.state).toBe("disconnecting");
+    expect(relationship.relationshipFile()?.state).toBe("disconnecting");
+
+    await relationship.restartDaemon();
+    await relationship.retry();
+
+    expect(relationship.revocationAttempts()).toBe(3);
+    expect(relationship.latestRevocation()).toEqual(
+      expect.objectContaining({
+        relationshipId: enrollment.relationshipId,
+        hubOrigin: enrollment.hubOrigin,
+        credential,
+      }),
+    );
+    expect(relationship.relationshipFile()).toBeNull();
+  });
+
   test("daemon restart reconnects the same durable relationship", async () => {
     relationship = await HubRelationshipHarness.start();
     await relationship.beginConnect().result;
@@ -426,5 +468,19 @@ describe("Hub relationship", () => {
     expect(forced.state).toBe("not_connected");
     expect(forced.warning).toContain("remote revocation");
     expect(relationship.relationshipFile()).toBeNull();
+  });
+
+  test("daemon shutdown closes owned agents after their Hub relationship is removed", async () => {
+    relationship = await HubRelationshipHarness.start();
+    await relationship.beginConnect().result;
+    relationship.connectLatestSocket();
+    relationship.beginOwnedCreate("orphan-create", "execution-orphan", { prompt: "sleep 30" });
+    const created = await relationship.ownedCreateResult("orphan-create");
+    expect(created).toMatchObject({ payload: { agent: { status: "running" } } });
+
+    await relationship.disconnect(true);
+    await relationship.restartDaemon();
+
+    expect(await relationship.storedOwnedStatus(created.payload.agentId!)).toBe("closed");
   });
 });
