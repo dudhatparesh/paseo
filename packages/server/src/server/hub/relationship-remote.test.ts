@@ -197,6 +197,30 @@ test("a transient socket response releases the failed upgrade and reports one co
   expect(hub.openConnections()).toBe(0);
 });
 
+test("a stalled socket opening handshake times out and releases the connection", async () => {
+  const hub = await UpgradeRejectingHub.start(["stall"]);
+  const outcomes = new SocketOutcomes();
+  const remote = new DirectHubRelationshipRemote({ requestTimeoutMs: 25 });
+
+  const socket = remote.openSocket(
+    {
+      relationshipId: "relationship-1",
+      webSocketUrl: hub.webSocketUrl,
+      credential: "credential",
+    },
+    outcomes.events,
+  ) as HubSocketConnection & WebSocket;
+
+  expect(await outcomes.next()).toEqual({
+    type: "failed",
+    message: "Opening handshake has timed out",
+  });
+  expect(await outcomes.afterCleanup()).toEqual([
+    { type: "failed", message: "Opening handshake has timed out" },
+  ]);
+  expect(socket.readyState).toBe(WebSocket.CLOSED);
+});
+
 test.each([401, 403] as const)(
   "controller treats socket authentication status %s as terminal without redialing",
   async (status) => {
@@ -375,7 +399,7 @@ class UpgradeRejectingHub {
   private attemptObserved = deferred<void>();
   private attempts = 0;
 
-  private constructor(private readonly statuses: number[]) {
+  private constructor(private readonly statuses: Array<number | "stall">) {
     this.server.on("upgrade", (_request, socket) => {
       const attempt = ++this.attempts;
       this.attemptObserved.resolve();
@@ -388,6 +412,10 @@ class UpgradeRejectingHub {
         released.resolve();
       });
       const status = this.statuses[attempt - 1] ?? this.statuses.at(-1) ?? 503;
+      if (status === "stall") {
+        socket.resume();
+        return;
+      }
       if (status === 0) {
         socket.destroy();
         return;
@@ -398,7 +426,7 @@ class UpgradeRejectingHub {
     });
   }
 
-  static async start(statuses: number[]): Promise<UpgradeRejectingHub> {
+  static async start(statuses: Array<number | "stall">): Promise<UpgradeRejectingHub> {
     const hub = new UpgradeRejectingHub(statuses);
     openUpgradeHubs.push(hub);
     openServers.push(hub.server);

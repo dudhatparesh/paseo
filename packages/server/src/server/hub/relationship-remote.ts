@@ -133,6 +133,7 @@ export class DirectHubRelationshipRemote implements HubRelationshipRemote {
 
   openSocket(input: HubSocketCredentials, events: HubSocketEvents): HubSocketConnection {
     const socket = new WebSocket(input.webSocketUrl, {
+      handshakeTimeout: this.requestTimeoutMs,
       headers: {
         authorization: `Bearer ${input.credential}`,
         "x-paseo-relationship-id": input.relationshipId,
@@ -164,6 +165,7 @@ export class DirectHubRelationshipRemote implements HubRelationshipRemote {
     socket.once("error", (error) => {
       if (settled) return;
       settled = true;
+      socket.terminate();
       events.failed(error);
     });
     return socket;

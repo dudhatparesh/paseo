@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import type {
   HubAgentCreateRequest,
   HubExecutionReconcileRequest,
@@ -49,8 +50,10 @@ export class HubSession {
 
   private async createAgent(message: HubAgentCreateRequest): Promise<void> {
     try {
+      requireNonBlankHubAgentField("executionId", message.executionId);
       requireNonBlankHubAgentField("prompt", message.prompt);
       requireNonBlankHubAgentField("cwd", message.cwd);
+      if (!isAbsolute(message.cwd)) throw new Error("Hub agent cwd must be absolute");
       const result = await this.executions.create({
         executionId: message.executionId,
         provider: message.provider,
@@ -94,6 +97,7 @@ export class HubSession {
   private async reconcile(message: HubExecutionReconcileRequest): Promise<void> {
     let result: Awaited<ReturnType<HubExecutions["reconcile"]>> = null;
     try {
+      requireNonBlankHubAgentField("executionId", message.executionId);
       result = await this.executions.reconcile(message.executionId);
     } catch {
       // Reconcile has no error variant on the wire. A terminal empty response
@@ -133,7 +137,10 @@ export class HubSession {
   }
 }
 
-function requireNonBlankHubAgentField(field: "prompt" | "cwd", value: string): void {
+function requireNonBlankHubAgentField(
+  field: "executionId" | "prompt" | "cwd",
+  value: string,
+): void {
   if (value.trim().length === 0) {
     throw new Error(`Hub agent ${field} cannot be blank`);
   }

@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { withOutput, type ListResult, type OutputSchema } from "../../output/index.js";
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
-import { connectToDaemon, resolveDaemonTarget } from "../../utils/client.js";
+import { connectToDaemon } from "../../utils/client.js";
 
 interface HubRow {
   state: string;
@@ -66,26 +66,6 @@ async function withClient<T>(
   }
 }
 
-export function assertLocalHubManagementTarget(
-  host: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): void {
-  const explicitHost = host ?? env.PASEO_HOST;
-  if (!explicitHost) return;
-  const target = resolveDaemonTarget(explicitHost);
-  if (target.type === "ipc") return;
-  const hostname = new URL(target.url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (
-    hostname === "localhost" ||
-    hostname === "::1" ||
-    hostname === "0:0:0:0:0:0:0:1" ||
-    /^127(?:\.\d{1,3}){3}$/.test(hostname)
-  ) {
-    return;
-  }
-  throw new Error("Hub relationship management requires a local daemon target");
-}
-
 export function createHubCommand(): Command {
   const hub = new Command("hub").description("Manage this daemon's Paseo Hub relationship");
   addJsonAndDaemonHostOptions(
@@ -94,7 +74,6 @@ export function createHubCommand(): Command {
     withOutput(async (...args) => {
       const url = args[0] as string;
       const options = args.at(-2) as { token: string; host?: string };
-      assertLocalHubManagementTarget(options.host);
       return withClient(options.host, async (client) =>
         result((await client.connectHub(url, options.token)).status),
       );

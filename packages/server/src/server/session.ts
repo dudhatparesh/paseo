@@ -395,15 +395,6 @@ export interface SessionFileSystem {
   isDirectory(path: string): Promise<boolean>;
 }
 
-export type SessionPeer =
-  | {
-      transport: "direct";
-      peer: "loopback" | "local_ipc" | "external";
-      browserOrigin: boolean;
-    }
-  | { transport: "relay"; peer: "external" }
-  | { transport: "internal"; peer: "internal" };
-
 const nodeSessionFileSystem: SessionFileSystem = {
   async isDirectory(path) {
     const stats = await stat(path).catch(() => null);
@@ -513,34 +504,6 @@ function parseClientCapabilities(
     }
   }
   return new Set(result);
-}
-
-type HubRelationshipManagementRequest = Extract<
-  SessionInboundMessage,
-  {
-    type:
-      | "hub.relationship.connect.request"
-      | "hub.relationship.get_status.request"
-      | "hub.relationship.disconnect.request";
-  }
->;
-
-function isHubRelationshipManagementRequest(
-  message: SessionInboundMessage,
-): message is HubRelationshipManagementRequest {
-  return (
-    message.type === "hub.relationship.connect.request" ||
-    message.type === "hub.relationship.get_status.request" ||
-    message.type === "hub.relationship.disconnect.request"
-  );
-}
-
-function canManageHubRelationships(peer: SessionPeer): boolean {
-  return (
-    peer.transport === "direct" &&
-    !peer.browserOrigin &&
-    (peer.peer === "loopback" || peer.peer === "local_ipc")
-  );
 }
 
 interface AgentTimelineProjectionSelection {
@@ -1386,10 +1349,7 @@ export class Session {
   /**
    * Main entry point for processing session messages
    */
-  public async handleMessage(
-    msg: SessionInboundMessage,
-    peer: SessionPeer = { transport: "internal", peer: "internal" },
-  ): Promise<void> {
+  public async handleMessage(msg: SessionInboundMessage): Promise<void> {
     this.inflightRequests++;
     if (this.inflightRequests > this.peakInflightRequests) {
       this.peakInflightRequests = this.inflightRequests;
@@ -1403,7 +1363,7 @@ export class Session {
         "agent.session.inbound",
       );
       try {
-        await this.dispatchInboundMessage(msg, peer);
+        await this.dispatchInboundMessage(msg);
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         this.sessionLogger.error({ err }, "Error handling message");
@@ -1441,22 +1401,7 @@ export class Session {
     }
   }
 
-  private async dispatchInboundMessage(
-    msg: SessionInboundMessage,
-    peer: SessionPeer,
-  ): Promise<void> {
-    if (isHubRelationshipManagementRequest(msg) && !canManageHubRelationships(peer)) {
-      this.emit({
-        type: "rpc_error",
-        payload: {
-          requestId: msg.requestId,
-          requestType: msg.type,
-          error: "Hub relationship management requires a local daemon connection",
-          code: "local_management_required",
-        },
-      });
-      return;
-    }
+  private async dispatchInboundMessage(msg: SessionInboundMessage): Promise<void> {
     const promise =
       this.dispatchVoiceAndControlMessage(msg) ??
       this.dispatchAgentRewindMessage(msg) ??

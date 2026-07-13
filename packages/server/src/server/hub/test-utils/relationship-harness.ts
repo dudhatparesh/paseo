@@ -512,7 +512,7 @@ export class HubRelationshipHarness {
     }
   }
 
-  async attemptExternalManagementAsCli(): Promise<SessionOutboundMessage[]> {
+  async manageRelationshipFromExternalSocket(): Promise<SessionOutboundMessage[]> {
     const address = Object.values(networkInterfaces())
       .flat()
       .find((candidate) => candidate?.family === "IPv4" && !candidate.internal)?.address;
@@ -544,7 +544,7 @@ export class HubRelationshipHarness {
     return responses;
   }
 
-  async attemptLoopbackBrowserConnectAsCli(): Promise<SessionOutboundMessage> {
+  async connectFromBrowserSocket(): Promise<SessionOutboundMessage> {
     const target = this.daemon?.getListenTarget();
     if (!target || target.type !== "tcp") throw new Error("Daemon did not bind TCP");
     const socket = await this.openClaimedCliSocket(`ws://127.0.0.1:${target.port}/ws`, {

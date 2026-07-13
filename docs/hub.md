@@ -15,11 +15,9 @@ The daemon persists a relationship ID and private connection credential before e
 relationship is independent of its current transport, so a future transport can replace the direct
 WebSocket without pairing again. The current foundation supports one Hub relationship per daemon.
 
-Only a trusted session arriving through a server-observed local, non-browser daemon transport may
-run the `hub.relationship.connect`, `hub.relationship.get_status`, and
-`hub.relationship.disconnect` RPCs. Remote, relay, browser-origin, and Hub sessions cannot manage
-the relationship. The CLI also rejects an explicit non-loopback connect target before sending the
-one-time token. A hello message's `clientType` is descriptive and grants no authority.
+Normal authenticated daemon sessions may run the `hub.relationship.connect`,
+`hub.relationship.get_status`, and `hub.relationship.disconnect` RPCs regardless of transport.
+The restricted Hub session cannot manage the relationship.
 
 ## Hub session scope
 

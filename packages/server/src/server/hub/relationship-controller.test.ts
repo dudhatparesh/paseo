@@ -54,60 +54,28 @@ describe("Hub relationship", () => {
     expect(relationship.enrollmentAttempts()).toEqual([]);
   });
 
-  test("an external socket cannot manage Hub relationships even when it claims to be the CLI", async () => {
+  test("an authenticated external socket can manage the Hub relationship", async () => {
     relationship = await HubRelationshipHarness.start();
 
-    const denials = await relationship.attemptExternalManagementAsCli();
+    const responses = await relationship.manageRelationshipFromExternalSocket();
 
-    expect(denials).toEqual([
-      {
-        type: "rpc_error",
-        payload: {
-          requestId: "external-hub-connect",
-          requestType: "hub.relationship.connect.request",
-          error: "Hub relationship management requires a local daemon connection",
-          code: "local_management_required",
-        },
-      },
-      {
-        type: "rpc_error",
-        payload: {
-          requestId: "external-hub-status",
-          requestType: "hub.relationship.get_status.request",
-          error: "Hub relationship management requires a local daemon connection",
-          code: "local_management_required",
-        },
-      },
-      {
-        type: "rpc_error",
-        payload: {
-          requestId: "external-hub-disconnect",
-          requestType: "hub.relationship.disconnect.request",
-          error: "Hub relationship management requires a local daemon connection",
-          code: "local_management_required",
-        },
-      },
+    expect(responses.map((response) => response.type)).toEqual([
+      "hub.relationship.connect.response",
+      "hub.relationship.get_status.response",
+      "hub.relationship.disconnect.response",
     ]);
-    expect(relationship.enrollmentAttempts()).toEqual([]);
+    expect(relationship.enrollmentAttempts()).toHaveLength(1);
     expect(relationship.relationshipFile()).toBeNull();
   });
 
-  test("a loopback browser socket cannot manage Hub relationships by claiming to be the CLI", async () => {
+  test("an authenticated browser socket can manage the Hub relationship", async () => {
     relationship = await HubRelationshipHarness.start();
 
-    const denial = await relationship.attemptLoopbackBrowserConnectAsCli();
+    const response = await relationship.connectFromBrowserSocket();
 
-    expect(denial).toEqual({
-      type: "rpc_error",
-      payload: {
-        requestId: "browser-hub-connect",
-        requestType: "hub.relationship.connect.request",
-        error: "Hub relationship management requires a local daemon connection",
-        code: "local_management_required",
-      },
-    });
-    expect(relationship.enrollmentAttempts()).toEqual([]);
-    expect(relationship.relationshipFile()).toBeNull();
+    expect(response.type).toBe("hub.relationship.connect.response");
+    expect(relationship.enrollmentAttempts()).toHaveLength(1);
+    expect(relationship.relationshipFile()?.state).toBe("active");
   });
 
   test("persists private generated authority before enrollment and active before dialing", async () => {

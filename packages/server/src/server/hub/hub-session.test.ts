@@ -17,6 +17,7 @@ class InMemoryHubExecutions implements HubExecutions {
   private readonly listeners = new Set<(event: OwnedAgentEvent) => void>();
   private reconcileError: Error | null = null;
   private creates = 0;
+  private reconciles = 0;
 
   async create(_input: HubAgentCreateInput): Promise<OwnedAgentSnapshot> {
     this.creates++;
@@ -24,6 +25,7 @@ class InMemoryHubExecutions implements HubExecutions {
   }
 
   async reconcile(_executionId: string): Promise<OwnedAgentSnapshot | null> {
+    this.reconciles++;
     if (this.reconcileError) throw this.reconcileError;
     return { executionId: "execution-1", agent: createAgentSnapshot() };
   }
@@ -48,6 +50,16 @@ class InMemoryHubExecutions implements HubExecutions {
   createCount(): number {
     return this.creates;
   }
+
+  reconcileCount(): number {
+    return this.reconciles;
+  }
+}
+
+interface HubCreateInput {
+  executionId?: string;
+  prompt: string;
+  cwd: string;
 }
 
 class HubSessionBoundary {
@@ -75,11 +87,11 @@ class HubSessionBoundary {
     });
   }
 
-  async createWith(input: { prompt: string; cwd: string }): Promise<void> {
+  async createWith(input: HubCreateInput): Promise<void> {
     await this.session.handleMessage({
       type: "hub.agent.create.request",
       requestId: "create-1",
-      executionId: "execution-1",
+      executionId: input.executionId ?? "execution-1",
       provider: "codex",
       workspaceId: "workspace-1",
       ...input,
@@ -88,6 +100,18 @@ class HubSessionBoundary {
 
   createCount(): number {
     return this.executions.createCount();
+  }
+
+  async reconcileWith(executionId: string): Promise<void> {
+    await this.session.handleMessage({
+      type: "hub.execution.reconcile.request",
+      requestId: "reconcile-1",
+      executionId,
+    });
+  }
+
+  reconcileCount(): number {
+    return this.executions.reconcileCount();
   }
 
   deliveredMessages(): SessionOutboundMessage[] {
@@ -146,6 +170,59 @@ test.each([
         agent: null,
         success: false,
         error: `Hub agent ${field} cannot be blank`,
+      },
+    },
+  ]);
+});
+
+test("blank Hub execution IDs reject create and reconcile before execution ownership", async () => {
+  const hub = new HubSessionBoundary();
+
+  await hub.createWith({ executionId: "  ", prompt: "Do the work", cwd: "/workspace" });
+  await hub.reconcileWith("\t");
+
+  expect(hub.createCount()).toBe(0);
+  expect(hub.reconcileCount()).toBe(0);
+  expect(hub.deliveredMessages()).toEqual([
+    {
+      type: "hub.agent.create.response",
+      payload: {
+        requestId: "create-1",
+        executionId: "  ",
+        agentId: null,
+        agent: null,
+        success: false,
+        error: "Hub agent executionId cannot be blank",
+      },
+    },
+    {
+      type: "hub.execution.reconcile.response",
+      payload: {
+        requestId: "reconcile-1",
+        executionId: "\t",
+        agentId: null,
+        agent: null,
+      },
+    },
+  ]);
+});
+
+test("relative Hub working directories reject create before execution ownership", async () => {
+  const hub = new HubSessionBoundary();
+
+  await hub.createWith({ prompt: "Do the work", cwd: "repo" });
+
+  expect(hub.createCount()).toBe(0);
+  expect(hub.deliveredMessages()).toEqual([
+    {
+      type: "hub.agent.create.response",
+      payload: {
+        requestId: "create-1",
+        executionId: "execution-1",
+        agentId: null,
+        agent: null,
+        success: false,
+        error: "Hub agent cwd must be absolute",
       },
     },
   ]);

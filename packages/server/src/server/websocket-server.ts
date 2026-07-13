@@ -30,12 +30,7 @@ import { asUint8Array, decodeBinaryFrame } from "@getpaseo/protocol/binary-frame
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import type { HostnamesConfig } from "./hostnames.js";
 import { isHostnameAllowed } from "./hostnames.js";
-import {
-  Session,
-  type SessionLifecycleIntent,
-  type SessionPeer,
-  type SessionRuntimeMetrics,
-} from "./session.js";
+import { Session, type SessionLifecycleIntent, type SessionRuntimeMetrics } from "./session.js";
 import { HubSession } from "./hub/hub-session.js";
 import type { HubRelationshipManagement } from "./hub/relationship-controller.js";
 import type { HubExecutions } from "./hub/relationship-owned-executions.js";
@@ -1849,11 +1844,7 @@ export class VoiceAssistantWebSocketServer {
     }
 
     const startMs = performance.now();
-    const identity = this.socketIdentities.get(ws);
-    const peer = identity
-      ? toSessionPeer(identity)
-      : ({ transport: "internal", peer: "internal" } satisfies SessionPeer);
-    await activeConnection.session.handleMessage(message.message, peer);
+    await activeConnection.session.handleMessage(message.message);
     const durationMs = performance.now() - startMs;
     this.recordRequestLatency(message.message.type, durationMs);
 
@@ -2252,17 +2243,6 @@ function resolveConnectionPeer(
   if (metadata?.transport === "relay") return "external";
   if (!requestMetadata.remoteAddress) return "local_ipc";
   return isLoopbackAddress(requestMetadata.remoteAddress) ? "loopback" : "external";
-}
-
-function toSessionPeer(identity: WebSocketConnectionIdentity): SessionPeer {
-  if (identity.transport === "relay") {
-    return { transport: "relay", peer: "external" };
-  }
-  return {
-    transport: "direct",
-    peer: identity.peer,
-    browserOrigin: identity.browserOrigin,
-  };
 }
 
 function isLoopbackAddress(address: string): boolean {
