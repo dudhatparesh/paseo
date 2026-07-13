@@ -54,6 +54,7 @@ import type {
   HubSocketCredentials,
   HubSocketEvents,
 } from "../relationship-remote.js";
+import { HubEnrollmentRejectedError } from "../relationship-remote.js";
 
 const execFileAsync = promisify(execFile);
 const HUB_ORIGIN = "https://hub.test";
@@ -306,6 +307,7 @@ class InMemoryHubRelationships implements HubRelationshipRemote {
   private enrollmentGate: Deferred<HubEnrollmentResult> | null = null;
   private enrollmentObserved = deferred<void>();
   private socketObserved = deferred<void>();
+  private enrollmentRejection: 401 | 403 | null = null;
   private revokeFailures = 0;
   private readonly relationships = new Set<string>();
   readonly enrollmentSnapshots: RelationshipInvocationSnapshot[] = [];
@@ -317,11 +319,20 @@ class InMemoryHubRelationships implements HubRelationshipRemote {
     this.enrollmentGate = deferred<HubEnrollmentResult>();
   }
 
+  rejectNextEnrollment(statusCode: 401 | 403): void {
+    this.enrollmentRejection = statusCode;
+  }
+
   async enroll(input: HubEnrollment): Promise<HubEnrollmentResult> {
     this.enrollmentSnapshots.push(this.captureRelationship());
     this.enrollments.push({ ...input, scopes: input.scopes.slice() });
     this.relationships.add(input.idempotencyKey);
     this.enrollmentObserved.resolve();
+    if (this.enrollmentRejection) {
+      const statusCode = this.enrollmentRejection;
+      this.enrollmentRejection = null;
+      throw new HubEnrollmentRejectedError(statusCode);
+    }
     if (this.enrollmentGate) return this.enrollmentGate.promise;
     return this.enrollmentResult(input);
   }
@@ -504,6 +515,10 @@ export class HubRelationshipHarness {
 
   loseEnrollmentResponse(): void {
     this.remote.loseEnrollmentResponse();
+  }
+
+  rejectNextEnrollment(statusCode: 401 | 403): void {
+    this.remote.rejectNextEnrollment(statusCode);
   }
 
   failRevocations(count: number): void {
@@ -706,6 +721,20 @@ export class HubRelationshipHarness {
       exists: existsSync(worktreePath),
       listed: listedPaths.includes(worktreePath),
     };
+  }
+
+  async listedWorktrees(): Promise<string[]> {
+    const { stdout } = await execFileAsync("git", [
+      "-C",
+      this.root,
+      "worktree",
+      "list",
+      "--porcelain",
+    ]);
+    return stdout
+      .split("\n")
+      .filter((line) => line.startsWith("worktree "))
+      .map((line) => line.slice("worktree ".length));
   }
 
   async createOwnedConcurrently(executionId = "execution-1"): Promise<{
@@ -1014,7 +1043,7 @@ export class HubRelationshipHarness {
   }
 
   private async runCli(args: string[]): Promise<Record<string, unknown>> {
-    const entrypoint = path.join(REPOSITORY_ROOT, "packages/cli/src/index.ts");
+    const entrypoint = path.join(import.meta.dirname, "hub-cli-entry.ts");
     const { stdout } = await execFileAsync(
       process.execPath,
       ["--import", "tsx", entrypoint, ...args, "--host", this.host, "--json"],

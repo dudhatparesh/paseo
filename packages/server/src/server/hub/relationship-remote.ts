@@ -92,7 +92,7 @@ export class DirectHubRelationshipRemote implements HubRelationshipRemote {
       `${input.hubOrigin}/api/daemon-relationships/${encodeURIComponent(input.relationshipId)}`,
       { method: "DELETE", headers: { authorization: `Bearer ${input.credential}` } },
     );
-    if (!response.ok && response.status !== 404) {
+    if (!response.ok && ![401, 403, 404].includes(response.status)) {
       throw new Error(`Hub revocation failed (${response.status})`);
     }
   }

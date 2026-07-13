@@ -1053,6 +1053,8 @@ export async function createPaseoDaemon(
             agentId,
             createdWorktree,
           }),
+        cleanupFailedCreate: (input) =>
+          hubAgentLifecycle.cleanupCreatedWorktreeAfterFailedAgentCreate(input),
       }),
   });
 

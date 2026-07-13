@@ -36,3 +36,20 @@ test("removing an owned agent removes its reconstructed execution association", 
   expect(removed.reconciliation).toBeNull();
   expect(removed.durableAgentCount).toBe(0);
 });
+
+test("a failed Hub create removes its auto-created worktree", async () => {
+  const hub = await launchRelationship();
+  hub.beginOwnedCreate("failed-worktree-create", "failed-worktree-execution", {
+    modeId: "missing-mode",
+    worktree: { mode: "branch-off", newBranch: "failed-hub-create" },
+  });
+
+  const response = await hub.ownedCreateResult("failed-worktree-create");
+
+  expect(response).toMatchObject({
+    type: "hub.agent.create.response",
+    payload: { success: false, executionId: "failed-worktree-execution" },
+  });
+  expect(await hub.listedWorktrees()).toHaveLength(1);
+  expect(await hub.durableOwnedAgentIds()).toEqual([]);
+});

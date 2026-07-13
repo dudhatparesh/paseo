@@ -135,6 +135,21 @@ describe("Hub relationship", () => {
     expect(relationship.enrolledRelationships()).toBe(1);
   });
 
+  test("a rejected pending enrollment is discarded without blocking daemon restart", async () => {
+    relationship = await HubRelationshipHarness.start();
+    relationship.holdEnrollment();
+    const connecting = relationship.beginConnect("expired-token");
+    await relationship.enrollmentBegins();
+    relationship.loseEnrollmentResponse();
+    await connecting.result;
+    relationship.rejectNextEnrollment(401);
+
+    await relationship.restartDaemon();
+
+    expect(await relationship.status()).toMatchObject({ state: "not_connected" });
+    expect(relationship.relationshipFile()).toBeNull();
+  });
+
   test("daemon restart reconnects the same durable relationship", async () => {
     relationship = await HubRelationshipHarness.start();
     await relationship.beginConnect().result;

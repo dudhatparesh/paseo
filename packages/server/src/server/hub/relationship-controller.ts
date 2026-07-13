@@ -159,7 +159,17 @@ export class HubRelationshipController implements HubRelationshipManagement {
 
   async start(): Promise<void> {
     if (this.record?.state === "active") this.openSocket(this.record, false);
-    if (this.record?.state === "pending") await this.tryEnrollment(this.record);
+    if (this.record?.state === "pending") {
+      try {
+        await this.tryEnrollment(this.record);
+      } catch (error) {
+        if (!(error instanceof HubEnrollmentRejectedError)) throw error;
+        this.options.logger.warn(
+          { statusCode: error.statusCode },
+          "Discarded rejected pending Hub enrollment during startup",
+        );
+      }
+    }
     if (this.record?.state === "disconnecting") await this.tryRevocation(this.record);
   }
 

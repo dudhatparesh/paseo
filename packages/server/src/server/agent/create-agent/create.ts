@@ -104,6 +104,7 @@ export interface CreateAgentFromMcpInput {
     agentId: string;
     createdWorktree: CreatePaseoWorktreeWorkflowResult | null;
   }) => void;
+  onWorktreeCreated?: (createdWorktree: CreatePaseoWorktreeWorkflowResult) => void;
   callerAgentId?: string;
   callerContext?: {
     lockedCwd?: string;
@@ -288,6 +289,7 @@ async function resolveMcpCreateAgent(
       worktree: input.worktree,
       initialPrompt: input.initialPrompt ?? "",
     });
+  if (createdWorktree) input.onWorktreeCreated?.(createdWorktree);
 
   const workspaceId = await resolveMcpWorkspaceId({
     dependencies,

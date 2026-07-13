@@ -3930,6 +3930,7 @@ export class DaemonClient {
   }
 
   async connectHub(hubUrl: string, token: string, requestId?: string) {
+    this.requireHubRelationshipSupport();
     return this.sendCorrelatedSessionRequest({
       requestId,
       message: { type: "hub.relationship.connect.request", hubUrl, token },
@@ -3938,6 +3939,7 @@ export class DaemonClient {
   }
 
   async getHubStatus(requestId?: string) {
+    this.requireHubRelationshipSupport();
     return this.sendCorrelatedSessionRequest({
       requestId,
       message: { type: "hub.relationship.get_status.request" },
@@ -3946,6 +3948,7 @@ export class DaemonClient {
   }
 
   async disconnectHub(force = false, requestId?: string) {
+    this.requireHubRelationshipSupport();
     return this.sendCorrelatedSessionRequest({
       requestId,
       message: { type: "hub.relationship.disconnect.request", force },
@@ -4771,6 +4774,13 @@ export class DaemonClient {
 
   getLastServerInfoMessage(): ServerInfoStatusPayload | null {
     return this.lastServerInfoMessage;
+  }
+
+  private requireHubRelationshipSupport(): void {
+    // COMPAT(hubRelationship): added in v0.1.X, drop the gate when floor >= v0.1.X.
+    if (this.lastServerInfoMessage?.features?.hubRelationship !== true) {
+      throw new Error("Update the host to use Hub relationship management.");
+    }
   }
 
   private resolveTransportUrlForAttempt(): string {

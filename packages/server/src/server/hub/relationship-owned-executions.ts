@@ -50,6 +50,10 @@ interface RelationshipOwnedExecutionsOptions {
     agentId: string;
     createdWorktree: CreatePaseoWorktreeWorkflowResult | null;
   }) => void;
+  cleanupFailedCreate?: (input: {
+    createdWorktree: CreatePaseoWorktreeWorkflowResult | null;
+    createdAgentId: string | null;
+  }) => Promise<void>;
 }
 
 export interface HubExecutions {
@@ -68,6 +72,9 @@ export class RelationshipOwnedExecutions implements HubExecutions {
     agentId: string;
     createdWorktree: CreatePaseoWorktreeWorkflowResult | null;
   }) => void;
+  private readonly cleanupFailedCreate: NonNullable<
+    RelationshipOwnedExecutionsOptions["cleanupFailedCreate"]
+  >;
 
   constructor(options: RelationshipOwnedExecutionsOptions) {
     this.relationshipId = options.relationshipId;
@@ -75,6 +82,7 @@ export class RelationshipOwnedExecutions implements HubExecutions {
     this.agentStorage = options.agentStorage;
     this.createAgentCommand = options.createAgent;
     this.registerAutoArchive = options.registerAutoArchive ?? (() => undefined);
+    this.cleanupFailedCreate = options.cleanupFailedCreate ?? (async () => undefined);
   }
 
   create(input: HubAgentCreateInput): Promise<OwnedAgentSnapshot> {
@@ -120,25 +128,37 @@ export class RelationshipOwnedExecutions implements HubExecutions {
       return this.projectRecord(existing);
     }
 
-    const result = await this.createAgentCommand({
-      kind: "mcp",
-      provider: input.model ? `${input.provider}/${input.model}` : input.provider,
-      title: input.prompt,
-      initialPrompt: input.prompt,
-      cwd: input.cwd,
-      workspaceId: input.workspaceId,
-      mode: input.modeId,
-      thinking: input.thinkingOptionId,
-      features: input.featureValues,
-      env: input.env,
-      worktree: toCreateAgentWorktree(input.worktree),
-      background: true,
-      notifyOnFinish: false,
-      owner,
-      ...(input.autoArchive === true
-        ? { onCreated: (created) => this.registerAutoArchive(created) }
-        : {}),
-    });
+    let createdWorktree: CreatePaseoWorktreeWorkflowResult | null = null;
+    let createdAgentId: string | null = null;
+    let result: Awaited<ReturnType<BoundCreateAgentCommand>>;
+    try {
+      result = await this.createAgentCommand({
+        kind: "mcp",
+        provider: input.model ? `${input.provider}/${input.model}` : input.provider,
+        title: input.prompt,
+        initialPrompt: input.prompt,
+        cwd: input.cwd,
+        workspaceId: input.workspaceId,
+        mode: input.modeId,
+        thinking: input.thinkingOptionId,
+        features: input.featureValues,
+        env: input.env,
+        worktree: toCreateAgentWorktree(input.worktree),
+        background: true,
+        notifyOnFinish: false,
+        owner,
+        onWorktreeCreated: (worktree) => {
+          createdWorktree = worktree;
+        },
+        onCreated: (created) => {
+          createdAgentId = created.agentId;
+          if (input.autoArchive === true) this.registerAutoArchive(created);
+        },
+      });
+    } catch (error) {
+      await this.cleanupFailedCreate({ createdWorktree, createdAgentId });
+      throw error;
+    }
 
     return {
       executionId: owner.executionId,
