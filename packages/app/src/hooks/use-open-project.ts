@@ -80,7 +80,8 @@ export function useOpenGithubRepo(
         mergeWorkspaces,
         setHasHydratedWorkspaces,
         openDraftTab,
-        navigateToWorkspace,
+        navigateToWorkspace: (targetServerId, workspaceId) =>
+          navigateToWorkspace({ serverId: targetServerId, workspaceId }),
       });
     },
     [
