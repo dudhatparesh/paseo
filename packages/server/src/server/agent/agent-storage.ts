@@ -91,6 +91,7 @@ export class AgentStorage {
   private pendingWrites: Map<string, Promise<void>> = new Map();
   private deleting: Set<string> = new Set();
   private hubAgentIdsByExecution: Map<string, string> = new Map();
+  private hubExecutionKeysByAgentId: Map<string, string> = new Map();
   private loaded = false;
   private baseDir: string;
   private loadPromise: Promise<StoredAgentRecord[]> | null = null;
@@ -260,6 +261,7 @@ export class AgentStorage {
     this.pathById.clear();
     this.pathsById.clear();
     this.hubAgentIdsByExecution.clear();
+    this.hubExecutionKeysByAgentId.clear();
 
     try {
       const records = await this.scanDisk();
@@ -366,16 +368,23 @@ export class AgentStorage {
   private indexOwner(record: StoredAgentRecord): void {
     this.removeOwnerIndex(record.id);
     if (record.owner?.kind === "hub") {
-      this.hubAgentIdsByExecution.set(hubExecutionKey(record.owner), record.id);
+      const key = hubExecutionKey(record.owner);
+      const previousAgentId = this.hubAgentIdsByExecution.get(key);
+      if (previousAgentId && previousAgentId !== record.id) {
+        this.hubExecutionKeysByAgentId.delete(previousAgentId);
+      }
+      this.hubAgentIdsByExecution.set(key, record.id);
+      this.hubExecutionKeysByAgentId.set(record.id, key);
     }
   }
 
   private removeOwnerIndex(agentId: string): void {
-    for (const [key, indexedAgentId] of this.hubAgentIdsByExecution) {
-      if (indexedAgentId === agentId) {
-        this.hubAgentIdsByExecution.delete(key);
-      }
+    const key = this.hubExecutionKeysByAgentId.get(agentId);
+    if (!key) return;
+    if (this.hubAgentIdsByExecution.get(key) === agentId) {
+      this.hubAgentIdsByExecution.delete(key);
     }
+    this.hubExecutionKeysByAgentId.delete(agentId);
   }
 
   private async waitForPendingWrite(agentId: string): Promise<void> {

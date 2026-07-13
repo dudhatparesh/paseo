@@ -58,6 +58,7 @@ import type {
 const execFileAsync = promisify(execFile);
 const HUB_ORIGIN = "https://hub.test";
 const SOCKET_URL = "wss://hub.test/daemon";
+const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../../../../../..");
 
 export interface ArchiveWatcher {
   close(): void;
@@ -1013,11 +1014,11 @@ export class HubRelationshipHarness {
   }
 
   private async runCli(args: string[]): Promise<Record<string, unknown>> {
-    const entrypoint = path.join(process.cwd(), "packages/cli/src/index.ts");
+    const entrypoint = path.join(REPOSITORY_ROOT, "packages/cli/src/index.ts");
     const { stdout } = await execFileAsync(
       process.execPath,
       ["--import", "tsx", entrypoint, ...args, "--host", this.host, "--json"],
-      { cwd: process.cwd(), env: { ...process.env, NO_COLOR: "1" } },
+      { cwd: REPOSITORY_ROOT, env: { ...process.env, NO_COLOR: "1" } },
     );
     const parsed = JSON.parse(stdout) as unknown;
     if (Array.isArray(parsed)) return parsed[0] as Record<string, unknown>;

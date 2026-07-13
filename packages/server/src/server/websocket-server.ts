@@ -2262,7 +2262,7 @@ function toSessionPeer(identity: WebSocketConnectionIdentity): SessionPeer {
 
 function isLoopbackAddress(address: string): boolean {
   const normalized = address.toLowerCase();
-  if (normalized === "::1") return true;
+  if (normalized === "::1" || normalized === "0:0:0:0:0:0:0:1") return true;
   const ipv4 = normalized.startsWith("::ffff:") ? normalized.slice("::ffff:".length) : normalized;
   return ipv4.startsWith("127.");
 }
