@@ -66,6 +66,15 @@ const EnrollmentResultSchema = z.object({
     }),
 });
 
+function ensureWebSocketMatchesHubOrigin(hubOrigin: string, webSocketUrl: string): void {
+  const hub = new URL(hubOrigin);
+  const socket = new URL(webSocketUrl);
+  const expectedProtocol = hub.protocol === "https:" ? "wss:" : "ws:";
+  if (socket.protocol !== expectedProtocol || socket.host !== hub.host) {
+    throw new Error("Hub WebSocket URL must match the Hub origin");
+  }
+}
+
 export class DirectHubRelationshipRemote implements HubRelationshipRemote {
   private readonly requestTimeoutMs: number;
 
@@ -97,7 +106,9 @@ export class DirectHubRelationshipRemote implements HubRelationshipRemote {
         }
         throw new Error(`Hub enrollment failed (${response.status})`);
       }
-      return EnrollmentResultSchema.parse(await response.json());
+      const enrollment = EnrollmentResultSchema.parse(await response.json());
+      ensureWebSocketMatchesHubOrigin(input.hubOrigin, enrollment.webSocketUrl);
+      return enrollment;
     });
   }
 

@@ -91,6 +91,24 @@ test("enrollment rejects a transport URL that cannot open a WebSocket", async ()
   ).rejects.toThrow("Hub WebSocket URL must use ws or wss");
 });
 
+test("enrollment rejects a WebSocket outside the enrolled Hub authority", async () => {
+  const hubOrigin = await startEnrollmentHub("ws://other-hub.test/daemon");
+  const remote = new DirectHubRelationshipRemote();
+
+  await expect(
+    remote.enroll({
+      relationshipId: "relationship-1",
+      idempotencyKey: "ceremony-1",
+      hubOrigin,
+      token: "token",
+      serverId: "server-1",
+      daemonPublicKey: "public-key",
+      credentialVerifier: "verifier",
+      scopes: ["hub.*"],
+    }),
+  ).rejects.toThrow("Hub WebSocket URL must match the Hub origin");
+});
+
 test.each(["enrollment", "revocation"])("%s HTTP calls are bounded", async (operation) => {
   const hubOrigin = await startStalledHub();
   const remote = new DirectHubRelationshipRemote({ requestTimeoutMs: 25 });
