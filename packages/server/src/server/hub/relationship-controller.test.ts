@@ -3,6 +3,19 @@ import { platform } from "node:os";
 import { afterEach, describe, expect, test } from "vitest";
 import { HubRelationshipHarness } from "./test-utils/relationship-harness.js";
 
+async function captureUnhandledRejections(action: () => Promise<void>): Promise<unknown[]> {
+  const rejections: unknown[] = [];
+  const capture = (reason: unknown) => rejections.push(reason);
+  process.on("unhandledRejection", capture);
+  try {
+    await action();
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally {
+    process.off("unhandledRejection", capture);
+  }
+  return rejections;
+}
+
 describe("Hub relationship", () => {
   let relationship: HubRelationshipHarness | null = null;
 
@@ -209,6 +222,24 @@ describe("Hub relationship", () => {
 
     expect(await relationship.status()).toMatchObject({ state: "not_connected" });
     expect(relationship.relationshipFile()).toBeNull();
+  });
+
+  test("a scheduled enrollment rejection is contained after removing pending authority", async () => {
+    relationship = await HubRelationshipHarness.start();
+    relationship.holdEnrollment();
+    const connecting = relationship.beginConnect("expired-token");
+    await relationship.enrollmentBegins();
+    relationship.loseEnrollmentResponse();
+    await connecting.result;
+    relationship.rejectNextEnrollment(403);
+
+    const unhandledRejections = await captureUnhandledRejections(() => relationship!.retry());
+    const status = await relationship.status();
+
+    expect(status).toMatchObject({ state: "not_connected" });
+    expect(relationship.relationshipFile()).toBeNull();
+    expect(relationship.pendingRelationshipRetries()).toBe(0);
+    expect(unhandledRejections).toEqual([]);
   });
 
   test.each(["{not-json", JSON.stringify({ version: 1, state: "unknown" })])(

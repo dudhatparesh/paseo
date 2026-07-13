@@ -394,7 +394,10 @@ export class HubRelationshipController implements HubRelationshipManagement {
     const delay = this.retryPolicy.delay(this.retryAttempt++);
     this.retry = this.clock.schedule(delay, () => {
       if (enrollmentGeneration !== this.enrollmentGeneration) return;
-      void this.tryEnrollment(record, enrollmentGeneration);
+      void this.tryEnrollment(record, enrollmentGeneration).catch((error: unknown) => {
+        if (error instanceof HubEnrollmentRejectedError) return;
+        this.options.logger.error({ err: error }, "Scheduled Hub enrollment retry failed");
+      });
     });
   }
 

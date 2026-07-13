@@ -1283,13 +1283,18 @@ export class HubRelationshipHarness {
   }
 
   private async removeRoot(): Promise<void> {
-    const attempts = platform() === "win32" ? 10 : 1;
+    let retryableCode: string | null = null;
+    if (platform() === "win32") retryableCode = "EBUSY";
+    if (platform() === "darwin") retryableCode = "ENOTEMPTY";
+    const attempts = retryableCode ? 10 : 1;
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
         await rm(this.root, { recursive: true, force: true });
         return;
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt === attempts) throw error;
+        if ((error as NodeJS.ErrnoException).code !== retryableCode || attempt === attempts) {
+          throw error;
+        }
         await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
       }
     }
