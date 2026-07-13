@@ -15,6 +15,7 @@ import {
 } from "./relationship-controller.js";
 import {
   DirectHubRelationshipRemote,
+  HubEnrollmentRejectedError,
   type HubSocketConnection,
   type HubSocketEvents,
 } from "./relationship-remote.js";
@@ -48,6 +49,28 @@ test("transient revocation failures remain retryable", async () => {
   await expect(
     remote.revoke({ relationshipId: "relationship-1", hubOrigin, credential: "credential" }),
   ).rejects.toThrow("Hub revocation failed (503)");
+});
+
+test.each([408, 429])("transient enrollment status %s remains retryable", async (status) => {
+  const hubOrigin = await startHubReturning(status);
+  const remote = new DirectHubRelationshipRemote();
+
+  const error = await remote
+    .enroll({
+      relationshipId: "relationship-1",
+      idempotencyKey: "ceremony-1",
+      hubOrigin,
+      token: "token",
+      serverId: "server-1",
+      daemonPublicKey: "public-key",
+      credentialVerifier: "verifier",
+      scopes: ["hub.*"],
+    })
+    .catch((caught: unknown) => caught);
+
+  expect(error).toBeInstanceOf(Error);
+  expect(error).not.toBeInstanceOf(HubEnrollmentRejectedError);
+  expect((error as Error).message).toBe(`Hub enrollment failed (${status})`);
 });
 
 test.each(["enrollment", "revocation"])("%s HTTP calls are bounded", async (operation) => {

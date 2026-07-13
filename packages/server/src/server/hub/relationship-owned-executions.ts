@@ -3,21 +3,14 @@ import type {
   AgentStreamEventPayload,
   CreateAgentWorktreeTarget,
 } from "@getpaseo/protocol/messages";
-import type { Logger } from "pino";
 
 import type { AgentManager, AgentManagerEvent, ManagedAgent } from "../agent/agent-manager.js";
 import type { AgentStorage, StoredAgentRecord } from "../agent/agent-storage.js";
-import { ensureAgentLoaded } from "../agent/agent-loading.js";
-import { startCreatedAgentInitialPrompt } from "../agent/agent-prompt.js";
 import type { BoundCreateAgentCommand } from "../agent/create-agent/create.js";
 import type { CreatePaseoWorktreeWorkflowResult } from "../worktree-session.js";
 import { buildStoredAgentPayload } from "../agent/agent-projections.js";
 import { serializeAgentSnapshot, serializeAgentStreamEvent } from "../messages.js";
 import { hubExecutionKey, type HubAgentOwner } from "../agent/agent-owner.js";
-import {
-  HubExecutionResumeStore,
-  type HubExecutionResumeIntent,
-} from "./execution-resume-store.js";
 
 export interface HubAgentCreateInput {
   executionId: string;
@@ -50,11 +43,9 @@ export type OwnedAgentEvent =
 
 interface RelationshipOwnedExecutionsOptions {
   relationshipId: string;
-  paseoHome: string;
   agentManager: AgentManager;
   agentStorage: AgentStorage;
   createAgent: BoundCreateAgentCommand;
-  logger: Logger;
   registerAutoArchive?: (input: {
     agentId: string;
     createdWorktree: CreatePaseoWorktreeWorkflowResult | null;
@@ -76,10 +67,7 @@ export class RelationshipOwnedExecutions implements HubExecutions {
   private readonly agentManager: AgentManager;
   private readonly agentStorage: AgentStorage;
   private readonly createAgentCommand: BoundCreateAgentCommand;
-  private readonly logger: Logger;
-  private readonly resumeStore: HubExecutionResumeStore;
   private readonly pendingCreates = new Map<string, Promise<OwnedAgentSnapshot>>();
-  private readonly pendingResumes = new Map<string, Promise<OwnedAgentSnapshot>>();
   private readonly registerAutoArchive: (input: {
     agentId: string;
     createdWorktree: CreatePaseoWorktreeWorkflowResult | null;
@@ -93,8 +81,6 @@ export class RelationshipOwnedExecutions implements HubExecutions {
     this.agentManager = options.agentManager;
     this.agentStorage = options.agentStorage;
     this.createAgentCommand = options.createAgent;
-    this.logger = options.logger;
-    this.resumeStore = new HubExecutionResumeStore(options.paseoHome);
     this.registerAutoArchive = options.registerAutoArchive ?? (() => undefined);
     this.cleanupFailedCreate = options.cleanupFailedCreate ?? (async () => undefined);
   }
@@ -142,7 +128,6 @@ export class RelationshipOwnedExecutions implements HubExecutions {
       return this.resolveRecord(existing);
     }
 
-    const resumeIntent = await this.resumeStore.arm(owner, input.prompt);
     let createdWorktree: CreatePaseoWorktreeWorkflowResult | null = null;
     let createdAgentId: string | null = null;
     let result: Awaited<ReturnType<BoundCreateAgentCommand>>;
@@ -152,7 +137,6 @@ export class RelationshipOwnedExecutions implements HubExecutions {
         provider: input.model ? `${input.provider}/${input.model}` : input.provider,
         title: input.prompt,
         initialPrompt: input.prompt,
-        clientMessageId: resumeIntent.messageId,
         cwd: input.cwd,
         workspaceId: input.workspaceId,
         mode: input.modeId,
@@ -172,13 +156,8 @@ export class RelationshipOwnedExecutions implements HubExecutions {
         },
       });
     } catch (error) {
-      await this.resumeStore.clear(owner);
       await this.cleanupFailedCreate({ createdWorktree, createdAgentId });
       throw error;
-    }
-
-    if (result.liveSnapshot.lifecycle !== "running") {
-      await this.resumeStore.clear(owner);
     }
 
     return {
@@ -187,56 +166,7 @@ export class RelationshipOwnedExecutions implements HubExecutions {
     };
   }
 
-  private async resolveRecord(record: StoredAgentRecord): Promise<OwnedAgentSnapshot> {
-    const owner = this.requireOwner(record);
-    const live = this.agentManager.getAgent(record.id);
-    if (live) {
-      if (live.lifecycle !== "running") await this.resumeStore.clear(owner);
-      return this.projectRecord(record);
-    }
-
-    if (record.archivedAt || record.lastStatus !== "running") {
-      await this.resumeStore.clear(owner);
-      return this.projectRecord(record);
-    }
-
-    const intent = await this.resumeStore.get(owner);
-    if (!intent) {
-      throw new Error(`Interrupted Hub execution ${owner.executionId} has no resume intent`);
-    }
-
-    const key = hubExecutionKey(owner);
-    const pending = this.pendingResumes.get(key);
-    if (pending) return pending;
-
-    const resume = this.resumeInterrupted(record, intent).finally(() => {
-      if (this.pendingResumes.get(key) === resume) this.pendingResumes.delete(key);
-    });
-    this.pendingResumes.set(key, resume);
-    return resume;
-  }
-
-  private async resumeInterrupted(
-    record: StoredAgentRecord,
-    intent: HubExecutionResumeIntent,
-  ): Promise<OwnedAgentSnapshot> {
-    await ensureAgentLoaded(record.id, {
-      agentManager: this.agentManager,
-      agentStorage: this.agentStorage,
-      logger: this.logger,
-    });
-
-    const live = this.agentManager.getAgent(record.id);
-    if (!live) throw new Error(`Resumed Hub agent ${record.id} is not loaded`);
-    if (!this.agentManager.hasInFlightRun(record.id)) {
-      await startCreatedAgentInitialPrompt({
-        agentManager: this.agentManager,
-        agentId: record.id,
-        prompt: intent.prompt,
-        runOptions: { messageId: intent.messageId },
-        logger: this.logger,
-      });
-    }
+  private resolveRecord(record: StoredAgentRecord): OwnedAgentSnapshot {
     return this.projectRecord(record);
   }
 
@@ -261,15 +191,6 @@ export class RelationshipOwnedExecutions implements HubExecutions {
     const agent = this.agentManager.getAgent(event.agentId);
     if (!this.isOwned(agent)) {
       return null;
-    }
-    if (
-      event.event.type === "turn_completed" ||
-      event.event.type === "turn_failed" ||
-      event.event.type === "turn_canceled"
-    ) {
-      void this.resumeStore.clear(agent.owner).catch((error: unknown) => {
-        this.logger.error({ err: error, agentId: agent.id }, "Failed to clear Hub resume intent");
-      });
     }
     const serialized = serializeAgentStreamEvent(event.event);
     if (!serialized) {

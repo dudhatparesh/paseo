@@ -37,7 +37,6 @@ import { DaemonClient } from "../../test-utils/daemon-client.js";
 import { AgentStorage } from "../../agent/agent-storage.js";
 import { AgentManager } from "../../agent/agent-manager.js";
 import { RelationshipOwnedExecutions } from "../relationship-owned-executions.js";
-import { HubExecutionResumeStore } from "../execution-resume-store.js";
 import {
   createAgentCommand,
   type CreateAgentCommandDependencies,
@@ -449,8 +448,8 @@ export class HubRelationshipHarness {
     this.remote.holdEnrollment();
   }
 
-  beginConnect(token = "ceremony-token"): CliProcess {
-    return { result: this.runCli(["hub", "connect", HUB_ORIGIN, "--token", token]) };
+  beginConnect(token = "ceremony-token", hubUrl = HUB_ORIGIN): CliProcess {
+    return { result: this.runCli(["hub", "connect", hubUrl, "--token", token]) };
   }
 
   async status(): Promise<Record<string, unknown>> {
@@ -626,12 +625,9 @@ export class HubRelationshipHarness {
       .map((record) => record.id);
   }
 
-  async hasResumeIntent(executionId: string): Promise<boolean> {
-    const relationshipId = this.relationshipFile()?.relationship.id;
-    if (!relationshipId) throw new Error("Hub relationship is not connected");
-    const store = new HubExecutionResumeStore(this.paseoHome);
-    const intent = await store.get({ kind: "hub", relationshipId, executionId });
-    return intent !== null;
+  async hubExecutionIntentFiles(): Promise<string[]> {
+    const directory = path.join(this.paseoHome, "hub-executions");
+    return existsSync(directory) ? readdir(directory) : [];
   }
 
   socketDeliveredResponse(socketIndex: number, requestId: string): boolean {
@@ -1212,10 +1208,8 @@ export class HubRelationshipHarness {
   private executionsForReconstruction(manager: AgentManager, storage: AgentStorage) {
     return new RelationshipOwnedExecutions({
       relationshipId: this.relationshipFile()!.relationship.id,
-      paseoHome: this.paseoHome,
       agentManager: manager,
       agentStorage: storage,
-      logger: pino({ level: "silent" }),
       createAgent: (input) =>
         createAgentCommand(
           {

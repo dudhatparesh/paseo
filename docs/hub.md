@@ -35,12 +35,11 @@ execution resolve to the same durable agent. On reconnect or daemon restart, Hub
 reads that stored association and returns current state; transient stream frames are not durably
 replayed.
 
-While a Hub-owned initial turn is running, the daemon also keeps a relationship-owned resume intent
-containing that prompt and a stable message ID. Provider session resume restores conversation state
-but does not generically continue work interrupted by daemon shutdown, so reconciliation reloads the
-same agent and replays only that armed turn. A normal socket reconnect or duplicate create sees the
-live run and does not replay it. Completion, failure, cancellation, archive, or any persisted state
-other than `running` disarms the intent.
+Daemon restart preserves the Hub relationship and owned execution identity, but interrupts any
+active turn. The daemon persists that agent as `closed`; reconciliation returns the same relationship,
+execution, and agent with that terminal state. Paseo never stores or automatically replays the
+original prompt. A duplicate create remains idempotent and returns the existing agent without
+starting another turn.
 
 Hub creates use the same agent creation path as trusted clients. They may select any existing
 worktree target shape and may request `autoArchive`. Worktree creation and terminal auto-archive use

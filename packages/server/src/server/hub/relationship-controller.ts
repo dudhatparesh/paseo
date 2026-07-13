@@ -138,6 +138,9 @@ function normalizeHubUrl(value: string): string {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("Hub URL must use HTTP or HTTPS");
   }
+  if (url.username || url.password) {
+    throw new Error("Hub URL cannot include credentials");
+  }
   url.pathname = url.pathname.replace(/\/$/, "");
   url.search = "";
   url.hash = "";
@@ -201,10 +204,6 @@ export class HubRelationshipController implements HubRelationshipManagement {
       connectedAt: this.connectedAt,
       lastError: this.lastError,
     };
-  }
-
-  hasReconnectableRelationship(relationshipId: string): boolean {
-    return this.record?.state === "active" && this.record.relationship.id === relationshipId;
   }
 
   async connect(input: { hubUrl: string; token: string }): Promise<HubRelationshipStatus> {

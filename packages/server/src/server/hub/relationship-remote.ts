@@ -87,7 +87,7 @@ export class DirectHubRelationshipRemote implements HubRelationshipRemote {
         signal,
       });
       if (!response.ok) {
-        if (response.status >= 400 && response.status < 500) {
+        if (response.status === 401 || response.status === 403) {
           throw new HubEnrollmentRejectedError(response.status);
         }
         throw new Error(`Hub enrollment failed (${response.status})`);
