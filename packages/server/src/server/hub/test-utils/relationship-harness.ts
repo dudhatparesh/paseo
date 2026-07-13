@@ -318,6 +318,7 @@ class InMemoryHubRelationships implements HubRelationshipRemote {
   private enrollmentObserved = deferred<void>();
   private socketObserved = deferred<void>();
   private enrollmentRejection: 401 | 403 | null = null;
+  private enrollmentScopes = ["hub.execution.*"];
   private revokeFailures = 0;
   private readonly relationships = new Set<string>();
   readonly enrollmentSnapshots: RelationshipInvocationSnapshot[] = [];
@@ -331,6 +332,10 @@ class InMemoryHubRelationships implements HubRelationshipRemote {
 
   rejectNextEnrollment(statusCode: 401 | 403): void {
     this.enrollmentRejection = statusCode;
+  }
+
+  returnEnrollmentScopes(scopes: string[]): void {
+    this.enrollmentScopes = scopes.slice();
   }
 
   async enroll(input: HubEnrollment): Promise<HubEnrollmentResult> {
@@ -415,7 +420,7 @@ class InMemoryHubRelationships implements HubRelationshipRemote {
   private enrollmentResult(input: HubEnrollment): HubEnrollmentResult {
     return {
       daemonId: input.daemonId,
-      scopes: ["hub.execution.*"],
+      scopes: this.enrollmentScopes.slice(),
       webSocketUrl: SOCKET_URL,
     };
   }
@@ -577,6 +582,10 @@ export class HubRelationshipHarness {
 
   completeEnrollment(): void {
     this.remote.completeEnrollment();
+  }
+
+  returnEnrollmentScopes(scopes: string[]): void {
+    this.remote.returnEnrollmentScopes(scopes);
   }
 
   loseEnrollmentResponse(): void {

@@ -116,6 +116,29 @@ describe("Hub relationship", () => {
     });
   });
 
+  test("Hub enrollment cannot widen the daemon's locally granted scopes", async () => {
+    relationship = await HubRelationshipHarness.start();
+    relationship.returnEnrollmentScopes(["hub.execution.*", "*"]);
+
+    await relationship.beginConnect().result;
+    relationship.connectLatestSocket();
+    const responses = relationship.sendHubRequestOnLatest({
+      type: "daemon.get_status.request",
+      requestId: "scope-escalation",
+    });
+
+    expect(relationship.relationshipFile()?.relationship.scopes).toEqual(["hub.execution.*"]);
+    expect(responses).toContainEqual({
+      type: "rpc_error",
+      payload: {
+        requestId: "scope-escalation",
+        requestType: "daemon.get_status.request",
+        error: "Session is not authorized for daemon.get_status.request",
+        code: "access_denied",
+      },
+    });
+  });
+
   test("a lost enrollment response reuses the exact ceremony", async () => {
     relationship = await HubRelationshipHarness.start();
     relationship.holdEnrollment();

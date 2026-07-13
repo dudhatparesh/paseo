@@ -343,7 +343,7 @@ export class HubRelationshipController implements HubRelationshipManagement {
       const active: ActiveRecord = {
         version: 1,
         state: "active",
-        relationship: { ...pending.relationship, scopes: enrollment.scopes },
+        relationship: pending.relationship,
         credential: pending.credential,
         transport: { kind: "direct_websocket", webSocketUrl: enrollment.webSocketUrl },
       };
