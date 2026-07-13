@@ -58,7 +58,12 @@ export class HubEnrollmentRejectedError extends Error {
 const EnrollmentResultSchema = z.object({
   relationshipId: z.string(),
   scopes: z.array(z.string()),
-  webSocketUrl: z.string().url(),
+  webSocketUrl: z
+    .string()
+    .url()
+    .refine((value) => ["ws:", "wss:"].includes(new URL(value).protocol), {
+      message: "Hub WebSocket URL must use ws or wss",
+    }),
 });
 
 export class DirectHubRelationshipRemote implements HubRelationshipRemote {

@@ -73,6 +73,24 @@ test.each([408, 429])("transient enrollment status %s remains retryable", async 
   expect((error as Error).message).toBe(`Hub enrollment failed (${status})`);
 });
 
+test("enrollment rejects a transport URL that cannot open a WebSocket", async () => {
+  const hubOrigin = await startEnrollmentHub("ftp://hub.test/daemon");
+  const remote = new DirectHubRelationshipRemote();
+
+  await expect(
+    remote.enroll({
+      relationshipId: "relationship-1",
+      idempotencyKey: "ceremony-1",
+      hubOrigin,
+      token: "token",
+      serverId: "server-1",
+      daemonPublicKey: "public-key",
+      credentialVerifier: "verifier",
+      scopes: ["hub.*"],
+    }),
+  ).rejects.toThrow("Hub WebSocket URL must use ws or wss");
+});
+
 test.each(["enrollment", "revocation"])("%s HTTP calls are bounded", async (operation) => {
   const hubOrigin = await startStalledHub();
   const remote = new DirectHubRelationshipRemote({ requestTimeoutMs: 25 });
@@ -202,6 +220,28 @@ test("controller redials once after a failed upgrade without also handling its c
 async function startHubReturning(status: number): Promise<string> {
   const server = createServer((_request, response) => {
     response.writeHead(status).end();
+  });
+  openServers.push(server);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address() as AddressInfo;
+  return `http://127.0.0.1:${address.port}`;
+}
+
+async function startEnrollmentHub(webSocketUrl: string): Promise<string> {
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    const enrollment = JSON.parse(body) as { relationshipId: string };
+    response.writeHead(200, { "content-type": "application/json" }).end(
+      JSON.stringify({
+        relationshipId: enrollment.relationshipId,
+        scopes: ["hub.*"],
+        webSocketUrl,
+      }),
+    );
   });
   openServers.push(server);
   await new Promise<void>((resolve, reject) => {
