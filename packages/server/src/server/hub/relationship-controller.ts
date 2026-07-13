@@ -16,11 +16,24 @@ import { BoundedExponentialHubRetryPolicy } from "./relationship-retry.js";
 
 const FILE_NAME = "hub-relationship.json";
 const SCOPES = ["hub.execution.*"] as const;
+const HubOriginSchema = z
+  .string()
+  .url()
+  .superRefine((value, context) => {
+    try {
+      normalizeHubUrl(value);
+    } catch (error) {
+      context.addIssue({
+        code: "custom",
+        message: error instanceof Error ? error.message : "Invalid Hub URL",
+      });
+    }
+  });
 
 const RelationshipSchema = z.object({
   daemonId: z.string().min(1),
   idempotencyKey: z.string().min(1),
-  hubOrigin: z.string().url(),
+  hubOrigin: HubOriginSchema,
   createdAt: z.string(),
   scopes: z.array(z.string()),
 });
@@ -153,9 +166,10 @@ function normalizeHubUrl(value: string): string {
   if (url.username || url.password) {
     throw new Error("Hub URL cannot include credentials");
   }
+  if (url.search || url.hash) {
+    throw new Error("Hub URL cannot include a query or fragment");
+  }
   url.pathname = url.pathname.replace(/\/$/, "");
-  url.search = "";
-  url.hash = "";
   return url.toString().replace(/\/$/, "");
 }
 

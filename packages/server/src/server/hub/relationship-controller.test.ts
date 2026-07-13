@@ -227,6 +227,38 @@ describe("Hub relationship", () => {
     },
   );
 
+  test.each([
+    ["a non-HTTP scheme", "ftp://hub.test"],
+    ["embedded credentials", "https://user:password@hub.test"],
+    ["a query", "https://hub.test?token=secret"],
+    ["a fragment", "https://hub.test#secret"],
+  ])("a persisted Hub origin with %s is quarantined before startup", async (_, hubOrigin) => {
+    relationship = await HubRelationshipHarness.start();
+    await relationship.corruptRelationshipFile(
+      JSON.stringify({
+        version: 1,
+        state: "pending",
+        relationship: {
+          daemonId: "daemon-1",
+          idempotencyKey: "ceremony-1",
+          hubOrigin,
+          createdAt: "2026-07-13T00:00:00.000Z",
+          scopes: ["hub.execution.*"],
+        },
+        credential: { secret: "credential" },
+        enrollment: { token: "enrollment-token" },
+        identity: { serverId: "server-1", daemonPublicKey: "public-key" },
+      }),
+    );
+
+    await relationship.startStoppedDaemon();
+
+    expect(await relationship.status()).toMatchObject({ state: "not_connected" });
+    expect(relationship.relationshipFile()).toBeNull();
+    expect(await relationship.quarantinedRelationshipFiles()).toHaveLength(1);
+    expect(relationship.enrollmentAttempts()).toEqual([]);
+  });
+
   test("a persisted non-WebSocket transport is quarantined before daemon startup", async () => {
     relationship = await HubRelationshipHarness.start();
     await relationship.corruptRelationshipFile(
