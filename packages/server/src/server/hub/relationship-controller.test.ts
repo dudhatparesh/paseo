@@ -282,6 +282,35 @@ describe("Hub relationship", () => {
     expect(relationship.socketAttempts()).toBe(0);
   });
 
+  test("a persisted WebSocket transport with a fragment is quarantined before startup", async () => {
+    relationship = await HubRelationshipHarness.start();
+    await relationship.corruptRelationshipFile(
+      JSON.stringify({
+        version: 1,
+        state: "active",
+        relationship: {
+          id: "relationship-1",
+          idempotencyKey: "ceremony-1",
+          hubOrigin: "https://hub.test",
+          createdAt: "2026-07-13T00:00:00.000Z",
+          scopes: ["hub.*"],
+        },
+        credential: { secret: "credential" },
+        transport: {
+          kind: "direct_websocket",
+          webSocketUrl: "wss://hub.test/daemon#fragment",
+        },
+      }),
+    );
+
+    await relationship.startStoppedDaemon();
+
+    expect(await relationship.status()).toMatchObject({ state: "not_connected" });
+    expect(relationship.relationshipFile()).toBeNull();
+    expect(await relationship.quarantinedRelationshipFiles()).toHaveLength(1);
+    expect(relationship.socketAttempts()).toBe(0);
+  });
+
   test("disconnect revokes an ambiguous pending enrollment before removing local authority", async () => {
     relationship = await HubRelationshipHarness.start();
     relationship.holdEnrollment();
@@ -549,6 +578,49 @@ describe("Hub relationship", () => {
     expect(durableAgentIds).toHaveLength(1);
   });
 
+  test("reconcile waits for a pending create across socket generations", async () => {
+    relationship = await HubRelationshipHarness.start();
+    await relationship.beginConnect().result;
+    relationship.connectLatestSocket();
+    relationship.holdAgentCreation();
+    relationship.beginOwnedCreate("pending-create", "pending-execution");
+    await relationship.agentCreationAttempts(1);
+
+    relationship.closeLatestSocket(1006);
+    await relationship.retry();
+    relationship.connectLatestSocket();
+    const reconciliation = relationship.reconcileOwned("pending-execution");
+    relationship.finishAgentCreation();
+
+    await expect(reconciliation).resolves.toMatchObject({
+      executionId: "pending-execution",
+      agentId: expect.any(String),
+      agent: { id: expect.any(String) },
+    });
+    expect(relationship.providerCreations()).toBe(1);
+    expect(await relationship.durableOwnedAgentIds()).toHaveLength(1);
+  });
+
+  test("force disconnect fences a pending create before removing authority", async () => {
+    relationship = await HubRelationshipHarness.start();
+    await relationship.beginConnect().result;
+    relationship.connectLatestSocket();
+    relationship.holdAgentCreation();
+    relationship.beginOwnedCreate("cancelled-create", "cancelled-execution", {
+      worktree: { mode: "branch-off", newBranch: "cancelled-hub-create" },
+    });
+    await relationship.agentCreationAttempts(1);
+
+    const disconnecting = relationship.beginDisconnect(true);
+    await relationship.relationshipStateBecomes(null);
+    relationship.finishAgentCreation();
+    await disconnecting.result;
+
+    expect(relationship.activeOwnedAgentIds()).toEqual([]);
+    expect(await relationship.durableOwnedAgentIds()).toEqual([]);
+    expect(await relationship.listedWorktrees()).toHaveLength(1);
+  });
+
   test.each([
     [4403, "Hub revoked this relationship"],
     [401, "Hub rejected socket authentication (401)"],
@@ -608,6 +680,18 @@ describe("Hub relationship", () => {
     expect(relationship.revocationAttempts()).toBe(4);
     expect(relationship.socketAttempts()).toBe(1);
     expect(relationship.relationshipFile()).toBeNull();
+  });
+
+  test("successful disconnect clears a transient revocation error", async () => {
+    relationship = await HubRelationshipHarness.start();
+    await relationship.beginConnect().result;
+    relationship.failRevocations(1);
+
+    const disconnecting = await relationship.disconnect();
+    await relationship.retry();
+
+    expect(disconnecting).toMatchObject({ state: "disconnecting", error: expect.any(String) });
+    expect(await relationship.status()).toMatchObject({ state: "not_connected", error: null });
   });
 
   test("force disconnect removes local authority and reports the remote warning", async () => {

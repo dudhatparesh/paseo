@@ -49,6 +49,8 @@ export class HubSession {
 
   private async createAgent(message: HubAgentCreateRequest): Promise<void> {
     try {
+      requireNonBlankHubAgentField("prompt", message.prompt);
+      requireNonBlankHubAgentField("cwd", message.cwd);
       const result = await this.executions.create({
         executionId: message.executionId,
         provider: message.provider,
@@ -128,6 +130,12 @@ export class HubSession {
         event: event.event,
       },
     });
+  }
+}
+
+function requireNonBlankHubAgentField(field: "prompt" | "cwd", value: string): void {
+  if (value.trim().length === 0) {
+    throw new Error(`Hub agent ${field} cannot be blank`);
   }
 }
 

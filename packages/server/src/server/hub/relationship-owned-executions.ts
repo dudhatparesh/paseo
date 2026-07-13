@@ -61,6 +61,7 @@ export interface HubExecutions {
   create(input: HubAgentCreateInput): Promise<OwnedAgentSnapshot>;
   reconcile(executionId: string): Promise<OwnedAgentSnapshot | null>;
   subscribe(listener: (event: OwnedAgentEvent) => void): () => void;
+  invalidateAuthority(): Promise<void>;
 }
 
 export class RelationshipOwnedExecutions implements HubExecutions {
@@ -69,6 +70,8 @@ export class RelationshipOwnedExecutions implements HubExecutions {
   private readonly agentStorage: AgentStorage;
   private readonly createAgentCommand: BoundCreateAgentCommand;
   private readonly pendingCreates = new Map<string, Promise<OwnedAgentSnapshot>>();
+  private authorityGeneration = 0;
+  private authorityActive = true;
   private readonly registerAutoArchive: (input: {
     agentId: string;
     createdWorktree: CreatePaseoWorktreeWorkflowResult | null;
@@ -88,6 +91,9 @@ export class RelationshipOwnedExecutions implements HubExecutions {
   }
 
   create(input: HubAgentCreateInput): Promise<OwnedAgentSnapshot> {
+    if (!this.authorityActive) {
+      return Promise.reject(new Error("Hub relationship authority is no longer active"));
+    }
     const owner = this.owner(input.executionId);
     const key = hubExecutionKey(owner);
     const pending = this.pendingCreates.get(key);
@@ -95,7 +101,8 @@ export class RelationshipOwnedExecutions implements HubExecutions {
       return pending;
     }
 
-    const create = this.createOrResolve(owner, input).finally(() => {
+    const authorityGeneration = this.authorityGeneration;
+    const create = this.createOrResolve(owner, input, authorityGeneration).finally(() => {
       if (this.pendingCreates.get(key) === create) {
         this.pendingCreates.delete(key);
       }
@@ -105,8 +112,17 @@ export class RelationshipOwnedExecutions implements HubExecutions {
   }
 
   async reconcile(executionId: string): Promise<OwnedAgentSnapshot | null> {
-    const record = await this.agentStorage.findByHubExecution(this.owner(executionId));
+    const owner = this.owner(executionId);
+    const pending = this.pendingCreates.get(hubExecutionKey(owner));
+    if (pending) return pending;
+    const record = await this.agentStorage.findByHubExecution(owner);
     return record ? this.resolveRecord(record) : null;
+  }
+
+  async invalidateAuthority(): Promise<void> {
+    this.authorityActive = false;
+    this.authorityGeneration++;
+    await Promise.allSettled(this.pendingCreates.values());
   }
 
   subscribe(listener: (event: OwnedAgentEvent) => void): () => void {
@@ -124,11 +140,14 @@ export class RelationshipOwnedExecutions implements HubExecutions {
   private async createOrResolve(
     owner: HubAgentOwner,
     input: HubAgentCreateInput,
+    authorityGeneration: number,
   ): Promise<OwnedAgentSnapshot> {
     const existing = await this.agentStorage.findByHubExecution(owner);
     if (existing) {
+      this.requireAuthority(authorityGeneration);
       return this.resolveRecord(existing);
     }
+    this.requireAuthority(authorityGeneration);
 
     let createdWorktree: CreatePaseoWorktreeWorkflowResult | null = null;
     let createdAgentId: string | null = null;
@@ -164,6 +183,7 @@ export class RelationshipOwnedExecutions implements HubExecutions {
           }
         },
       });
+      this.requireAuthority(authorityGeneration);
     } catch (error) {
       try {
         await autoArchiveRegistration.cancel();
@@ -193,6 +213,12 @@ export class RelationshipOwnedExecutions implements HubExecutions {
 
   private resolveRecord(record: StoredAgentRecord): OwnedAgentSnapshot {
     return this.projectRecord(record);
+  }
+
+  private requireAuthority(authorityGeneration: number): void {
+    if (!this.authorityActive || authorityGeneration !== this.authorityGeneration) {
+      throw new Error("Hub relationship authority ended during agent creation");
+    }
   }
 
   private projectRecord(record: StoredAgentRecord): OwnedAgentSnapshot {

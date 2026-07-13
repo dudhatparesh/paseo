@@ -31,7 +31,8 @@ const TransportSchema = z.object({
   webSocketUrl: z
     .string()
     .url()
-    .refine((value) => ["ws:", "wss:"].includes(new URL(value).protocol)),
+    .refine((value) => ["ws:", "wss:"].includes(new URL(value).protocol))
+    .refine((value) => new URL(value).hash === ""),
 });
 const PendingSchema = z.object({
   version: z.literal(1),
@@ -262,15 +263,18 @@ export class HubRelationshipController implements HubRelationshipManagement {
     force: boolean;
   }): Promise<{ status: HubRelationshipStatus; warning?: string }> {
     const waitForEnrollment = this.record?.state === "pending";
+    const pendingCreateCleanup = this.executions?.value.invalidateAuthority() ?? Promise.resolve();
     this.cancelLifecycle();
     this.socket?.close();
     this.socket = null;
     if (!this.record || this.record.state === "revoked") {
       this.remove();
+      await pendingCreateCleanup;
       return { status: this.status() };
     }
     if (input.force) {
       this.remove();
+      await pendingCreateCleanup;
       return {
         status: this.status(),
         warning: "Local Hub credential removed; remote revocation may remain pending.",
@@ -290,6 +294,7 @@ export class HubRelationshipController implements HubRelationshipManagement {
       await Promise.all(this.inFlightEnrollments);
     }
     await this.tryRevocation(disconnecting);
+    await pendingCreateCleanup;
     return { status: this.status() };
   }
 
@@ -453,6 +458,7 @@ export class HubRelationshipController implements HubRelationshipManagement {
   }
 
   private revoke(reason: string): void {
+    void this.executions?.value.invalidateAuthority();
     this.cancelLifecycle();
     if (!this.record) return;
     const revoked: RevokedRecord = {
@@ -492,11 +498,13 @@ export class HubRelationshipController implements HubRelationshipManagement {
   }
 
   private remove(): void {
+    void this.executions?.value.invalidateAuthority();
     this.cancelLifecycle();
     rmSync(this.filePath, { force: true });
     this.record = null;
     this.state = "not_connected";
     this.connectedAt = null;
+    this.lastError = null;
   }
 
   private load(): HubRelationshipRecord | null {

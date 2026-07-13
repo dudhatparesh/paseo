@@ -63,6 +63,9 @@ const EnrollmentResultSchema = z.object({
     .url()
     .refine((value) => ["ws:", "wss:"].includes(new URL(value).protocol), {
       message: "Hub WebSocket URL must use ws or wss",
+    })
+    .refine((value) => new URL(value).hash === "", {
+      message: "Hub WebSocket URL cannot include a fragment",
     }),
 });
 

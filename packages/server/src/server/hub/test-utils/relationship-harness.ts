@@ -499,12 +499,12 @@ export class HubRelationshipHarness {
     return { result: this.runCli(["hub", "disconnect", ...(force ? ["--force"] : [])]) };
   }
 
-  async relationshipStateBecomes(expected: string): Promise<void> {
+  async relationshipStateBecomes(expected: string | null): Promise<void> {
     const observed = deferred<void>();
     const watcher = watch(this.paseoHome, () => {
-      if (this.relationshipFile()?.state === expected) observed.resolve();
+      if ((this.relationshipFile()?.state ?? null) === expected) observed.resolve();
     });
-    if (this.relationshipFile()?.state === expected) observed.resolve();
+    if ((this.relationshipFile()?.state ?? null) === expected) observed.resolve();
     try {
       await observed.promise;
     } finally {

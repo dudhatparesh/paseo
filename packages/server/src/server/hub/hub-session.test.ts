@@ -16,8 +16,10 @@ import { HubSession } from "./hub-session.js";
 class InMemoryHubExecutions implements HubExecutions {
   private readonly listeners = new Set<(event: OwnedAgentEvent) => void>();
   private reconcileError: Error | null = null;
+  private creates = 0;
 
   async create(_input: HubAgentCreateInput): Promise<OwnedAgentSnapshot> {
+    this.creates++;
     return { executionId: "execution-1", agent: createAgentSnapshot() };
   }
 
@@ -31,6 +33,8 @@ class InMemoryHubExecutions implements HubExecutions {
     return () => this.listeners.delete(listener);
   }
 
+  async invalidateAuthority(): Promise<void> {}
+
   publishCurrentState(): void {
     for (const listener of this.listeners) {
       listener({ type: "update", executionId: "execution-1", agent: createAgentSnapshot() });
@@ -39,6 +43,10 @@ class InMemoryHubExecutions implements HubExecutions {
 
   failReconcile(error: Error): void {
     this.reconcileError = error;
+  }
+
+  createCount(): number {
+    return this.creates;
   }
 }
 
@@ -65,6 +73,21 @@ class HubSessionBoundary {
       requestId: "reconcile-1",
       executionId: "execution-1",
     });
+  }
+
+  async createWith(input: { prompt: string; cwd: string }): Promise<void> {
+    await this.session.handleMessage({
+      type: "hub.agent.create.request",
+      requestId: "create-1",
+      executionId: "execution-1",
+      provider: "codex",
+      workspaceId: "workspace-1",
+      ...input,
+    });
+  }
+
+  createCount(): number {
+    return this.executions.createCount();
   }
 
   deliveredMessages(): SessionOutboundMessage[] {
@@ -99,6 +122,30 @@ test("reconcile storage failures receive a terminal empty response", async () =>
         executionId: "execution-1",
         agentId: null,
         agent: null,
+      },
+    },
+  ]);
+});
+
+test.each([
+  { field: "prompt", prompt: "  ", cwd: "/workspace" },
+  { field: "cwd", prompt: "Do the work", cwd: "\t" },
+])("blank Hub $field values reject the create before execution", async ({ field, prompt, cwd }) => {
+  const hub = new HubSessionBoundary();
+
+  await hub.createWith({ prompt, cwd });
+
+  expect(hub.createCount()).toBe(0);
+  expect(hub.deliveredMessages()).toEqual([
+    {
+      type: "hub.agent.create.response",
+      payload: {
+        requestId: "create-1",
+        executionId: "execution-1",
+        agentId: null,
+        agent: null,
+        success: false,
+        error: `Hub agent ${field} cannot be blank`,
       },
     },
   ]);

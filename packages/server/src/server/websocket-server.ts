@@ -36,8 +36,9 @@ import {
   type SessionPeer,
   type SessionRuntimeMetrics,
 } from "./session.js";
-import { HubSession, type HubExecutions } from "./hub/index.js";
+import { HubSession } from "./hub/hub-session.js";
 import type { HubRelationshipManagement } from "./hub/relationship-controller.js";
+import type { HubExecutions } from "./hub/relationship-owned-executions.js";
 import type { AgentProvider } from "./agent/agent-sdk-types.js";
 import { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
 import type { WorkspaceGitRuntimeSnapshot, WorkspaceGitService } from "./workspace-git-service.js";
