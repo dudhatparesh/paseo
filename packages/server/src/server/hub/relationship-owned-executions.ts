@@ -165,16 +165,22 @@ export class RelationshipOwnedExecutions implements HubExecutions {
         },
       });
     } catch (error) {
-      await autoArchiveRegistration.cancel();
-      if (createdAgentId && this.agentManager.getAgent(createdAgentId)) {
-        await this.agentManager.closeAgent(createdAgentId);
-      }
-      await this.cleanupFailedCreate({
-        createdWorktree: ownedCreatedWorktree(createdWorktree),
-        createdAgentId: null,
-      });
-      if (createdAgentId) {
-        await this.agentStorage.remove(createdAgentId);
+      try {
+        await autoArchiveRegistration.cancel();
+        if (createdAgentId && this.agentManager.getAgent(createdAgentId)) {
+          await this.agentManager.closeAgent(createdAgentId);
+        }
+      } finally {
+        try {
+          await this.cleanupFailedCreate({
+            createdWorktree: ownedCreatedWorktree(createdWorktree),
+            createdAgentId: null,
+          });
+        } finally {
+          if (createdAgentId) {
+            await this.agentStorage.remove(createdAgentId);
+          }
+        }
       }
       throw error;
     }
@@ -196,7 +202,10 @@ export class RelationshipOwnedExecutions implements HubExecutions {
       executionId: owner.executionId,
       agent: live
         ? serializeAgentSnapshot(live)
-        : buildStoredAgentPayload(record, this.agentManager.getRegisteredProviderIds()),
+        : {
+            ...buildStoredAgentPayload(record, this.agentManager.getRegisteredProviderIds()),
+            status: "closed",
+          },
     };
   }
 

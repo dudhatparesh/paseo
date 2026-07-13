@@ -28,7 +28,10 @@ const SanitizedRelationshipSchema = RelationshipSchema.omit({ idempotencyKey: tr
 const CredentialSchema = z.object({ secret: z.string().min(1) });
 const TransportSchema = z.object({
   kind: z.literal("direct_websocket"),
-  webSocketUrl: z.string().url(),
+  webSocketUrl: z
+    .string()
+    .url()
+    .refine((value) => ["ws:", "wss:"].includes(new URL(value).protocol)),
 });
 const PendingSchema = z.object({
   version: z.literal(1),
@@ -59,12 +62,20 @@ const RevokedSchema = z.object({
   transport: TransportSchema.optional(),
   reason: z.string().optional(),
 });
-const RecordSchema = z.discriminatedUnion("state", [
-  PendingSchema,
-  ActiveSchema,
-  DisconnectingSchema,
-  RevokedSchema,
-]);
+const RecordSchema = z
+  .discriminatedUnion("state", [PendingSchema, ActiveSchema, DisconnectingSchema, RevokedSchema])
+  .superRefine((record, context) => {
+    if (!("transport" in record) || !record.transport) return;
+    const hub = new URL(record.relationship.hubOrigin);
+    const socket = new URL(record.transport.webSocketUrl);
+    const expectedProtocol = hub.protocol === "https:" ? "wss:" : "ws:";
+    if (socket.protocol === expectedProtocol && socket.host === hub.host) return;
+    context.addIssue({
+      code: "custom",
+      path: ["transport", "webSocketUrl"],
+      message: "Hub WebSocket URL must match the Hub origin",
+    });
+  });
 type PendingRecord = z.infer<typeof PendingSchema>;
 type ActiveRecord = z.infer<typeof ActiveSchema>;
 type DisconnectingRecord = z.infer<typeof DisconnectingSchema>;
@@ -160,6 +171,7 @@ export class HubRelationshipController implements HubRelationshipManagement {
   private generation = 0;
   private enrollmentGeneration = 0;
   private retryAttempt = 0;
+  private readonly inFlightEnrollments = new Set<Promise<void>>();
   private executions: { relationshipId: string; value: HubExecutions } | null = null;
 
   constructor(private readonly options: HubRelationshipControllerOptions) {
@@ -249,6 +261,7 @@ export class HubRelationshipController implements HubRelationshipManagement {
   async disconnect(input: {
     force: boolean;
   }): Promise<{ status: HubRelationshipStatus; warning?: string }> {
+    const waitForEnrollment = this.record?.state === "pending";
     this.cancelLifecycle();
     this.socket?.close();
     this.socket = null;
@@ -273,6 +286,9 @@ export class HubRelationshipController implements HubRelationshipManagement {
     this.persist(disconnecting);
     this.record = disconnecting;
     this.state = "disconnecting";
+    if (waitForEnrollment) {
+      await Promise.all(this.inFlightEnrollments);
+    }
     await this.tryRevocation(disconnecting);
     return { status: this.status() };
   }
@@ -280,17 +296,23 @@ export class HubRelationshipController implements HubRelationshipManagement {
   private async tryEnrollment(pending: PendingRecord, enrollmentGeneration: number): Promise<void> {
     if (enrollmentGeneration !== this.enrollmentGeneration) return;
     const verifier = createHash("sha256").update(pending.credential.secret).digest("base64url");
+    const request = this.options.remote.enroll({
+      relationshipId: pending.relationship.id,
+      idempotencyKey: pending.relationship.idempotencyKey,
+      hubOrigin: pending.relationship.hubOrigin,
+      token: pending.enrollment.token,
+      serverId: pending.identity.serverId,
+      daemonPublicKey: pending.identity.daemonPublicKey,
+      credentialVerifier: verifier,
+      scopes: pending.relationship.scopes,
+    });
+    const settled = request.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.inFlightEnrollments.add(settled);
     try {
-      const enrollment = await this.options.remote.enroll({
-        relationshipId: pending.relationship.id,
-        idempotencyKey: pending.relationship.idempotencyKey,
-        hubOrigin: pending.relationship.hubOrigin,
-        token: pending.enrollment.token,
-        serverId: pending.identity.serverId,
-        daemonPublicKey: pending.identity.daemonPublicKey,
-        credentialVerifier: verifier,
-        scopes: pending.relationship.scopes,
-      });
+      const enrollment = await request;
       if (enrollmentGeneration !== this.enrollmentGeneration) return;
       if (
         enrollment.relationshipId !== pending.relationship.id ||
@@ -318,6 +340,8 @@ export class HubRelationshipController implements HubRelationshipManagement {
       }
       this.lastError = error instanceof Error ? error.message : String(error);
       this.scheduleEnrollment(pending, enrollmentGeneration);
+    } finally {
+      this.inFlightEnrollments.delete(settled);
     }
   }
 

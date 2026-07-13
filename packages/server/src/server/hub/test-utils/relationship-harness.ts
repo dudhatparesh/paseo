@@ -447,11 +447,17 @@ export class HubRelationshipHarness {
   private readonly cliProcesses = new Set<Promise<unknown>>();
   private readonly claimedCliSockets = new Set<WebSocket>();
   private failNextPromptStart = false;
+  private failNextSessionClose = false;
   private observedEnrollments = 0;
   private observedSockets = 0;
   private reconcileRequests = 0;
   private readonly codex = new ControlledAgentClient(
     createTestAgentClients({
+      closeSession: async () => {
+        if (!this.failNextSessionClose) return;
+        this.failNextSessionClose = false;
+        throw new Error("Requested provider session close failure");
+      },
       onStartTurn: (prompt) => {
         if (this.failNextPromptStart) {
           this.failNextPromptStart = false;
@@ -487,6 +493,23 @@ export class HubRelationshipHarness {
 
   async disconnect(force = false): Promise<Record<string, unknown>> {
     return this.runCli(["hub", "disconnect", ...(force ? ["--force"] : [])]);
+  }
+
+  beginDisconnect(force = false): CliProcess {
+    return { result: this.runCli(["hub", "disconnect", ...(force ? ["--force"] : [])]) };
+  }
+
+  async relationshipStateBecomes(expected: string): Promise<void> {
+    const observed = deferred<void>();
+    const watcher = watch(this.paseoHome, () => {
+      if (this.relationshipFile()?.state === expected) observed.resolve();
+    });
+    if (this.relationshipFile()?.state === expected) observed.resolve();
+    try {
+      await observed.promise;
+    } finally {
+      watcher.close();
+    }
   }
 
   async attemptExternalManagementAsCli(): Promise<SessionOutboundMessage[]> {
@@ -573,6 +596,10 @@ export class HubRelationshipHarness {
 
   failNextProviderPromptStart(): void {
     this.failNextPromptStart = true;
+  }
+
+  failNextProviderSessionClose(): void {
+    this.failNextSessionClose = true;
   }
 
   async socketDialed(): Promise<void> {

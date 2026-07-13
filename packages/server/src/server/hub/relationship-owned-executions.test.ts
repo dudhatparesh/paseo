@@ -23,7 +23,9 @@ test("sequential replay after reconstruction keeps one durable owned agent", asy
   const reconstructed = await hub.reconstructAndReplay();
 
   expect(reconstructed.replay.agent.id).toBe(created.first.agentId);
+  expect(reconstructed.replay.agent.status).toBe("closed");
   expect(reconstructed.reconciliation?.agent.id).toBe(created.first.agentId);
+  expect(reconstructed.reconciliation?.agent.status).toBe("closed");
   expect(reconstructed.durableAgentCount).toBe(1);
 });
 
@@ -89,6 +91,25 @@ test("failed Hub auto-archive creates release their lifecycle subscriptions", as
   expect(await hub.durableOwnedAgentIds()).toEqual([]);
   expect(await hub.listedWorktrees()).toHaveLength(1);
   expect(hub.agentSubscriptionCount()).toBe(subscriptionBaseline);
+});
+
+test("failed Hub create cleans durable state when provider close rejects", async () => {
+  const hub = await launchRelationship();
+  hub.failNextProviderPromptStart();
+  hub.failNextProviderSessionClose();
+  hub.beginOwnedCreate("failed-close-create", "failed-close-execution", {
+    worktree: { mode: "branch-off", newBranch: "failed-close-worktree" },
+  });
+
+  const response = await hub.ownedCreateResult("failed-close-create");
+
+  expect(response).toMatchObject({
+    type: "hub.agent.create.response",
+    payload: { success: false, executionId: "failed-close-execution" },
+  });
+  expect(hub.activeOwnedAgentIds()).toEqual([]);
+  expect(await hub.durableOwnedAgentIds()).toEqual([]);
+  expect(await hub.listedWorktrees()).toHaveLength(1);
 });
 
 test("Hub checkout uses the requested branch ref", async () => {

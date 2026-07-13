@@ -256,6 +256,32 @@ describe("Hub relationship", () => {
     },
   );
 
+  test("a persisted non-WebSocket transport is quarantined before daemon startup", async () => {
+    relationship = await HubRelationshipHarness.start();
+    await relationship.corruptRelationshipFile(
+      JSON.stringify({
+        version: 1,
+        state: "active",
+        relationship: {
+          id: "relationship-1",
+          idempotencyKey: "ceremony-1",
+          hubOrigin: "https://hub.test",
+          createdAt: "2026-07-13T00:00:00.000Z",
+          scopes: ["hub.*"],
+        },
+        credential: { secret: "credential" },
+        transport: { kind: "direct_websocket", webSocketUrl: "ftp://hub.test/daemon" },
+      }),
+    );
+
+    await relationship.startStoppedDaemon();
+
+    expect(await relationship.status()).toMatchObject({ state: "not_connected" });
+    expect(relationship.relationshipFile()).toBeNull();
+    expect(await relationship.quarantinedRelationshipFiles()).toHaveLength(1);
+    expect(relationship.socketAttempts()).toBe(0);
+  });
+
   test("disconnect revokes an ambiguous pending enrollment before removing local authority", async () => {
     relationship = await HubRelationshipHarness.start();
     relationship.holdEnrollment();
@@ -281,6 +307,27 @@ describe("Hub relationship", () => {
         credential,
       }),
     );
+    expect(relationship.relationshipFile()).toBeNull();
+  });
+
+  test("disconnect revokes only after an in-flight enrollment settles", async () => {
+    relationship = await HubRelationshipHarness.start();
+    relationship.holdEnrollment();
+    const connecting = relationship.beginConnect("one-time-token");
+    const enrollment = await relationship.enrollmentBegins();
+
+    const disconnecting = relationship.beginDisconnect();
+    await relationship.relationshipStateBecomes("disconnecting");
+    expect(relationship.revocationAttempts()).toBe(0);
+
+    relationship.completeEnrollment();
+    await connecting.result;
+    const disconnected = await disconnecting.result;
+
+    expect(disconnected.state).toBe("not_connected");
+    expect(relationship.latestRevocation()?.relationshipId).toBe(enrollment.relationshipId);
+    expect(relationship.revocationAttempts()).toBe(1);
+    expect(relationship.socketAttempts()).toBe(0);
     expect(relationship.relationshipFile()).toBeNull();
   });
 
