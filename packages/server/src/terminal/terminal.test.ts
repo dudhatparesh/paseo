@@ -204,6 +204,31 @@ describe("createTerminal", () => {
     ).toBe("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
   });
 
+  it("prefers $SHELL, then the login shell, then /bin/sh on POSIX", () => {
+    expect(
+      resolveDefaultTerminalShell({
+        platform: "linux",
+        env: { SHELL: "/usr/bin/zsh" },
+        getLoginShell: () => "/bin/bash",
+      }),
+    ).toBe("/usr/bin/zsh");
+    // No $SHELL (e.g. daemon launched via gosu/systemd): passwd login shell wins.
+    expect(
+      resolveDefaultTerminalShell({
+        platform: "linux",
+        env: {},
+        getLoginShell: () => "/bin/bash",
+      }),
+    ).toBe("/bin/bash");
+    expect(
+      resolveDefaultTerminalShell({
+        platform: "linux",
+        env: {},
+        getLoginShell: () => null,
+      }),
+    ).toBe("/bin/sh");
+  });
+
   it("passes profile commands through untouched on non-Windows", async () => {
     const resolveExecutable = vi.fn(async () => "/usr/local/bin/claude");
     const resolved = await resolveTerminalSpawnCommand("claude", ["--foo"], {
