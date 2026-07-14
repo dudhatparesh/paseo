@@ -214,7 +214,7 @@ function GithubRepoForm({
 }: GithubRepoFormProps) {
   const { theme } = useUnistyles();
   const inputStyle = useMemo(
-    () => [styles.input, { color: theme.colors.foreground }],
+    () => [styles.formInput, { color: theme.colors.foreground }],
     [theme.colors.foreground],
   );
   const labelStyle = useMemo(
@@ -820,6 +820,17 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     fontSize: theme.fontSize.lg,
     paddingVertical: theme.spacing[1],
+    outlineStyle: "none",
+  } as object,
+  // The GitHub form stacks its fields in a column, so it must not inherit
+  // `input`'s flex: 1 — on native that collapses the TextInput's height.
+  formInput: {
+    fontSize: theme.fontSize.base,
+    paddingVertical: theme.spacing[2],
+    paddingHorizontal: theme.spacing[3],
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
     outlineStyle: "none",
   } as object,
   results: {
