@@ -1106,7 +1106,18 @@ export const ar: TranslationResources = {
         title: "إقران الجهاز",
         description: "قم بتوصيل هاتفك بهذا البرنامج الخفي",
       },
+      hostTerminal: {
+        title: "طرفية المضيف",
+        description: "افتح صدفة على جهاز المضيف",
+      },
     },
+  },
+  hostTerminal: {
+    title: "طرفية المضيف",
+    chooseHost: "فتح طرفية المضيف",
+    unsupported: "حدّث المضيف لاستخدام هذه الميزة.",
+    createFailed: "تعذّر فتح طرفية المضيف.",
+    notFound: "طرفية المضيف هذه لم تعد قيد التشغيل.",
   },
   projectPicker: {
     placeholder: "اكتب للبحث...",

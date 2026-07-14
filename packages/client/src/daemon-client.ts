@@ -58,6 +58,8 @@ import type {
   OpenProjectResponseMessage,
   WorkspaceGithubCloneProtocol,
   WorkspaceGithubCloneResponse,
+  TerminalHostCreateResponse,
+  TerminalHostListResponse,
   ArchiveWorkspaceResponseMessage,
   WorkspaceSetupStatusResponseMessage,
   ListCommandsResponse,
@@ -408,6 +410,8 @@ type DictationFinishAcceptedPayload = Extract<
 type AgentPermissionResolvedPayload = AgentPermissionResolvedMessage["payload"];
 type ListTerminalsPayload = ListTerminalsResponse["payload"];
 type CreateTerminalPayload = CreateTerminalResponse["payload"];
+type TerminalHostCreatePayload = TerminalHostCreateResponse["payload"];
+type TerminalHostListPayload = TerminalHostListResponse["payload"];
 export type RenameTerminalResult = z.infer<typeof RenameTerminalResponseSchema>["payload"];
 type SubscribeTerminalPayload = SubscribeTerminalResponse["payload"];
 type CloseItemsPayload = CloseItemsResponse["payload"];
@@ -4342,6 +4346,33 @@ export class DaemonClient {
       message,
       responseType: "create_terminal_response",
       options: { skipQueue: true },
+    });
+  }
+
+  // Host terminals attach to the daemon, not a workspace: the daemon resolves
+  // the starting cwd itself, so no cwd/workspaceId is sent. Requires
+  // server_info.features.hostTerminal on the daemon.
+  async createHostTerminal(options?: {
+    name?: string;
+    size?: { rows: number; cols: number };
+    requestId?: string;
+  }): Promise<TerminalHostCreatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId: options?.requestId,
+      message: {
+        type: "terminal.host.create.request",
+        ...(options?.name ? { name: options.name } : {}),
+        ...(options?.size !== undefined ? { size: options.size } : {}),
+      },
+    });
+  }
+
+  async listHostTerminals(requestId?: string): Promise<TerminalHostListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest({
+      requestId,
+      message: {
+        type: "terminal.host.list.request",
+      },
     });
   }
 

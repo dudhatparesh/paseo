@@ -98,6 +98,8 @@ describe("terminal-session-controller restore", () => {
       listDirectories: vi.fn(() => []),
       killAll: vi.fn(),
       subscribeTerminalsChanged: vi.fn(() => vi.fn()),
+      subscribeHostTerminalsChanged: vi.fn(() => vi.fn()),
+      getHostTerminals: vi.fn(async () => []),
       subscribeTerminalActivity: vi.fn(() => vi.fn()),
       subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
     };
@@ -212,6 +214,8 @@ describe("terminal-session-controller legacy terminal creation", () => {
       listDirectories: vi.fn(() => []),
       killAll: vi.fn(),
       subscribeTerminalsChanged: vi.fn(() => vi.fn()),
+      subscribeHostTerminalsChanged: vi.fn(() => vi.fn()),
+      getHostTerminals: vi.fn(async () => []),
       subscribeTerminalActivity: vi.fn(() => vi.fn()),
       subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
     };
@@ -287,6 +291,8 @@ describe("terminal-session-controller legacy terminal creation", () => {
       listDirectories: vi.fn(() => []),
       killAll: vi.fn(),
       subscribeTerminalsChanged: vi.fn(() => vi.fn()),
+      subscribeHostTerminalsChanged: vi.fn(() => vi.fn()),
+      getHostTerminals: vi.fn(async () => []),
       subscribeTerminalActivity: vi.fn(() => vi.fn()),
       subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
     };
@@ -373,6 +379,8 @@ describe("terminal-session-controller wrap-flag gating", () => {
       listDirectories: vi.fn(() => []),
       killAll: vi.fn(),
       subscribeTerminalsChanged: vi.fn(() => vi.fn()),
+      subscribeHostTerminalsChanged: vi.fn(() => vi.fn()),
+      getHostTerminals: vi.fn(async () => []),
       subscribeTerminalActivity: vi.fn(() => vi.fn()),
       subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
     } as unknown as TerminalManager;
@@ -449,6 +457,8 @@ describe("terminal-session-controller subdirectory aggregation", () => {
         changedListener = listener;
         return vi.fn();
       }),
+      subscribeHostTerminalsChanged: vi.fn(() => vi.fn()),
+      getHostTerminals: vi.fn(async () => []),
       subscribeTerminalActivity: vi.fn(() => vi.fn()),
       subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
     };
@@ -514,6 +524,8 @@ describe("terminal-session-controller subdirectory aggregation", () => {
       listDirectories: vi.fn(() => [rootCwd, worktreeCwd]),
       killAll: vi.fn(),
       subscribeTerminalsChanged: vi.fn(() => vi.fn()),
+      subscribeHostTerminalsChanged: vi.fn(() => vi.fn()),
+      getHostTerminals: vi.fn(async () => []),
       subscribeTerminalActivity: vi.fn(() => vi.fn()),
       subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
     };
@@ -597,6 +609,8 @@ describe("terminal-session-controller workspace-scoped subscriptions", () => {
         changedListener = listener;
         return vi.fn();
       }),
+      subscribeHostTerminalsChanged: vi.fn(() => vi.fn()),
+      getHostTerminals: vi.fn(async () => []),
       subscribeTerminalActivity: vi.fn(() => vi.fn()),
       subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
     };
@@ -684,6 +698,8 @@ describe("terminal-session-controller backpressure snapshot fallback", () => {
       listDirectories: vi.fn(() => []),
       killAll: vi.fn(),
       subscribeTerminalsChanged: vi.fn(() => vi.fn()),
+      subscribeHostTerminalsChanged: vi.fn(() => vi.fn()),
+      getHostTerminals: vi.fn(async () => []),
     } as unknown as TerminalManager;
 
     const frames: TerminalStreamFrame[] = [];

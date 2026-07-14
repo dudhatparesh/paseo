@@ -387,6 +387,15 @@ export function buildHostAgentDetailRoute(serverId: string, agentId: string, wor
   return `${buildHostRootRoute(normalizedServerId)}/agent/${encodeSegment(normalizedAgentId)}` as const;
 }
 
+export function buildHostTerminalRoute(serverId: string, terminalId: string) {
+  const normalizedServerId = trimNonEmpty(serverId);
+  const normalizedTerminalId = trimNonEmpty(terminalId);
+  if (!normalizedServerId || !normalizedTerminalId) {
+    return "/" as const;
+  }
+  return `${buildHostRootRoute(normalizedServerId)}/terminal/${encodeSegment(normalizedTerminalId)}` as const;
+}
+
 export function buildHostRootRoute(serverId: string) {
   const normalized = trimNonEmpty(serverId);
   if (!normalized) {

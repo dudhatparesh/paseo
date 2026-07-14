@@ -1144,7 +1144,18 @@ export const fr: TranslationResources = {
         title: "Associer un appareil",
         description: "Connectez votre téléphone à ce démon",
       },
+      hostTerminal: {
+        title: "Terminal de l'hôte",
+        description: "Ouvrez un shell sur la machine hôte",
+      },
     },
+  },
+  hostTerminal: {
+    title: "Terminal de l'hôte",
+    chooseHost: "Ouvrir le terminal de l'hôte",
+    unsupported: "Mettez à jour l'hôte pour utiliser cette fonctionnalité.",
+    createFailed: "Impossible d'ouvrir le terminal de l'hôte.",
+    notFound: "Ce terminal de l'hôte n'est plus en cours d'exécution.",
   },
   projectPicker: {
     placeholder: "Tapez pour rechercher...",

@@ -2029,6 +2029,28 @@ export const CreateTerminalRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// Host terminals are owned by the daemon itself, not a workspace. The daemon
+// resolves the starting cwd (the daemon user's home directory) — clients never
+// send one. Enumeration is ownership-based: these never appear in
+// workspace/cwd-scoped terminal listings even when cwds coincide.
+export const TerminalHostCreateRequestSchema = z.object({
+  type: z.literal("terminal.host.create.request"),
+  requestId: z.string(),
+  name: z.string().optional(),
+  // Client seeds the PTY with its measured viewport, mirroring create_terminal_request.
+  size: z
+    .object({
+      rows: z.number().int().positive(),
+      cols: z.number().int().positive(),
+    })
+    .optional(),
+});
+
+export const TerminalHostListRequestSchema = z.object({
+  type: z.literal("terminal.host.list.request"),
+  requestId: z.string(),
+});
+
 export const RenameTerminalRequestSchema = z.object({
   type: z.literal("terminal.rename.request"),
   terminalId: z.string(),
@@ -2207,6 +2229,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SubscribeTerminalsRequestSchema,
   UnsubscribeTerminalsRequestSchema,
   CreateTerminalRequestSchema,
+  TerminalHostCreateRequestSchema,
+  TerminalHostListRequestSchema,
   RenameTerminalRequestSchema,
   StartWorkspaceScriptRequestSchema,
   SubscribeTerminalRequestSchema,
@@ -2435,6 +2459,8 @@ export const ServerInfoStatusPayloadSchema = z
         workspacePinning: z.boolean().optional(),
         // COMPAT(workspaceGithubClone): added in v0.1.108, remove gate after 2027-01-13.
         workspaceGithubClone: z.boolean().optional(),
+        // COMPAT(hostTerminal): added in v0.1.108, remove gate after 2027-01-14.
+        hostTerminal: z.boolean().optional(),
       })
       .optional(),
   })
@@ -4246,6 +4272,36 @@ export const CreateTerminalResponseSchema = z.object({
   }),
 });
 
+export const TerminalHostCreateResponseSchema = z.object({
+  type: z.literal("terminal.host.create.response"),
+  payload: z.object({
+    terminal: TerminalInfoSchema.nullable(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+// Host terminal listings keep cwd (unlike workspace listings, which omit it):
+// there is no surrounding workspace to imply the directory, and the list UI
+// shows where each shell lives.
+export const TerminalHostListResponseSchema = z.object({
+  type: z.literal("terminal.host.list.response"),
+  payload: z.object({
+    terminals: z.array(TerminalInfoSchema),
+    requestId: z.string(),
+  }),
+});
+
+// Broadcast to every connected session when the host terminal set changes
+// (created, killed, exited, renamed). Host terminals are few, so there is no
+// subscription scoping — unlike cwd-keyed terminals_changed.
+export const TerminalHostChangedSchema = z.object({
+  type: z.literal("terminal.host.changed"),
+  payload: z.object({
+    terminals: z.array(TerminalInfoSchema),
+  }),
+});
+
 export const RenameTerminalResponseSchema = z.object({
   type: z.literal("terminal.rename.response"),
   payload: z.object({
@@ -4450,6 +4506,9 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ListTerminalsResponseSchema,
   TerminalsChangedSchema,
   CreateTerminalResponseSchema,
+  TerminalHostCreateResponseSchema,
+  TerminalHostListResponseSchema,
+  TerminalHostChangedSchema,
   RenameTerminalResponseSchema,
   SubscribeTerminalResponseSchema,
   KillTerminalResponseSchema,
@@ -4805,6 +4864,11 @@ export type UnsubscribeTerminalsRequest = z.infer<typeof UnsubscribeTerminalsReq
 export type TerminalsChanged = z.infer<typeof TerminalsChangedSchema>;
 export type CreateTerminalRequest = z.infer<typeof CreateTerminalRequestSchema>;
 export type CreateTerminalResponse = z.infer<typeof CreateTerminalResponseSchema>;
+export type TerminalHostCreateRequest = z.infer<typeof TerminalHostCreateRequestSchema>;
+export type TerminalHostCreateResponse = z.infer<typeof TerminalHostCreateResponseSchema>;
+export type TerminalHostListRequest = z.infer<typeof TerminalHostListRequestSchema>;
+export type TerminalHostListResponse = z.infer<typeof TerminalHostListResponseSchema>;
+export type TerminalHostChanged = z.infer<typeof TerminalHostChangedSchema>;
 export type RenameTerminalRequest = z.infer<typeof RenameTerminalRequestSchema>;
 export type RenameTerminalResponse = z.infer<typeof RenameTerminalResponseSchema>;
 export type StartWorkspaceScriptRequest = z.infer<typeof StartWorkspaceScriptRequestSchema>;

@@ -1142,7 +1142,18 @@ export const es: TranslationResources = {
         title: "Emparejar dispositivo",
         description: "Conecta tu teléfono a este demonio",
       },
+      hostTerminal: {
+        title: "Terminal del host",
+        description: "Abre una shell en la máquina del host",
+      },
     },
+  },
+  hostTerminal: {
+    title: "Terminal del host",
+    chooseHost: "Abrir terminal del host",
+    unsupported: "Actualiza el host para usar esta función.",
+    createFailed: "No se pudo abrir la terminal del host.",
+    notFound: "Esta terminal del host ya no está en ejecución.",
   },
   projectPicker: {
     placeholder: "Escriba para buscar...",

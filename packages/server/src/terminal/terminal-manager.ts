@@ -16,7 +16,8 @@ export interface TerminalListItem {
   id: string;
   name: string;
   cwd: string;
-  workspaceId: string;
+  // Absent for host terminals (owned by the daemon, not a workspace).
+  workspaceId?: string;
   title?: string;
   activity: TerminalActivity | null;
 }
@@ -28,11 +29,19 @@ export interface TerminalsChangedEvent {
 
 export type TerminalsChangedListener = (input: TerminalsChangedEvent) => void;
 
+// Host terminals change as one unkeyed set: they are few and have no cwd/workspace
+// scoping, so listeners always receive the full list.
+export interface HostTerminalsChangedEvent {
+  terminals: TerminalListItem[];
+}
+
+export type HostTerminalsChangedListener = (input: HostTerminalsChangedEvent) => void;
+
 export interface TerminalActivityTransitionEvent {
   terminalId: string;
   name: string;
   cwd: string;
-  workspaceId: string;
+  workspaceId?: string;
   activity: TerminalActivity | null;
   previous: TerminalActivity | null;
 }
@@ -51,10 +60,14 @@ export type TerminalWorkspaceContributionChangedListener = (
 
 export interface TerminalManager {
   getTerminals(cwd: string, options?: { workspaceId?: string }): Promise<TerminalSession[]>;
+  // Host terminals only (workspace-less owners). Workspace enumeration
+  // (getTerminals) never returns these, even on a matching cwd.
+  getHostTerminals(): Promise<TerminalSession[]>;
   createTerminal(options: {
     id?: string;
     cwd: string;
-    workspaceId: string;
+    // Omit for a host terminal owned by the daemon rather than a workspace.
+    workspaceId?: string;
     name?: string;
     title?: string;
     env?: Record<string, string>;
@@ -87,6 +100,7 @@ export interface TerminalManager {
   listDirectories(): string[];
   killAll(): void;
   subscribeTerminalsChanged(listener: TerminalsChangedListener): () => void;
+  subscribeHostTerminalsChanged(listener: HostTerminalsChangedListener): () => void;
   subscribeTerminalActivity(listener: TerminalActivityListener): () => void;
   subscribeTerminalWorkspaceContributionChanged(
     listener: TerminalWorkspaceContributionChangedListener,
@@ -111,6 +125,7 @@ export function createTerminalManager(
   const terminalActivityUnsubscribeById = new Map<string, () => void>();
   const terminalActivityTokenById = new Map<string, string>();
   const terminalsChangedListeners = new Set<TerminalsChangedListener>();
+  const hostTerminalsChangedListeners = new Set<HostTerminalsChangedListener>();
   const terminalActivityListeners = new Set<TerminalActivityListener>();
   const terminalWorkspaceContributionChangedListeners =
     new Set<TerminalWorkspaceContributionChangedListener>();
@@ -158,7 +173,7 @@ export function createTerminalManager(
 
     const previousActivity = session.getActivity();
     const previousBucket = deriveTerminalActivityStatusBucket(previousActivity);
-    if (previousBucket !== null) {
+    if (previousBucket !== null && session.workspaceId !== undefined) {
       emitTerminalWorkspaceContributionChanged({
         terminalId: session.id,
         cwd: session.cwd,
@@ -166,7 +181,7 @@ export function createTerminalManager(
       });
     }
 
-    emitTerminalsChanged({ cwd: session.cwd });
+    emitChangedForSession(session);
   }
 
   function resolveDefaultEnvForCwd(cwd: string): Record<string, string> | undefined {
@@ -192,14 +207,14 @@ export function createTerminalManager(
       removeSessionById(session.id, { kill: false });
     });
     const unsubscribeTitle = session.onTitleChange(() => {
-      emitTerminalsChanged({ cwd: session.cwd });
+      emitChangedForSession(session);
     });
     const unsubscribeActivity = session.onActivityChange((transition) => {
       emitTerminalActivityTransition({ session, transition });
-      emitTerminalsChanged({ cwd: session.cwd });
+      emitChangedForSession(session);
       const previousBucket = deriveTerminalActivityStatusBucket(transition.previous);
       const nextBucket = deriveTerminalActivityStatusBucket(transition.activity);
-      if (previousBucket !== nextBucket) {
+      if (previousBucket !== nextBucket && session.workspaceId !== undefined) {
         emitTerminalWorkspaceContributionChanged({
           terminalId: session.id,
           cwd: session.cwd,
@@ -218,10 +233,16 @@ export function createTerminalManager(
       id: input.session.id,
       name: input.session.name,
       cwd: input.session.cwd,
-      workspaceId: input.session.workspaceId,
+      ...(input.session.workspaceId !== undefined
+        ? { workspaceId: input.session.workspaceId }
+        : {}),
       title: input.session.getTitle(),
       activity: input.session.getActivity(),
     };
+  }
+
+  function isHostSession(session: TerminalSession): boolean {
+    return session.workspaceId === undefined;
   }
 
   function emitTerminalsChanged(input: { cwd: string }): void {
@@ -229,9 +250,10 @@ export function createTerminalManager(
       return;
     }
 
-    const terminals = (terminalsByCwd.get(input.cwd) ?? []).map((session) =>
-      toTerminalListItem({ session }),
-    );
+    // Host terminals never surface in cwd-scoped events, even on a shared cwd.
+    const terminals = (terminalsByCwd.get(input.cwd) ?? [])
+      .filter((session) => !isHostSession(session))
+      .map((session) => toTerminalListItem({ session }));
     const event: TerminalsChangedEvent = {
       cwd: input.cwd,
       terminals,
@@ -243,6 +265,34 @@ export function createTerminalManager(
       } catch {
         // no-op
       }
+    }
+  }
+
+  function listHostSessions(): TerminalSession[] {
+    return Array.from(terminalsById.values()).filter(isHostSession);
+  }
+
+  function emitHostTerminalsChanged(): void {
+    if (hostTerminalsChangedListeners.size === 0) {
+      return;
+    }
+    const event: HostTerminalsChangedEvent = {
+      terminals: listHostSessions().map((session) => toTerminalListItem({ session })),
+    };
+    for (const listener of hostTerminalsChangedListeners) {
+      try {
+        listener(event);
+      } catch {
+        // no-op
+      }
+    }
+  }
+
+  function emitChangedForSession(session: TerminalSession): void {
+    if (isHostSession(session)) {
+      emitHostTerminalsChanged();
+    } else {
+      emitTerminalsChanged({ cwd: session.cwd });
     }
   }
 
@@ -300,18 +350,23 @@ export function createTerminalManager(
       }
 
       // When the query carries a workspaceId, two workspaces sharing a cwd must
-      // not see each other's terminals. A missing owner is not workspace
-      // membership; unscoped callers can still list those legacy terminals.
+      // not see each other's terminals. Host terminals (no owner workspace) are
+      // excluded from workspace enumeration entirely — even unscoped legacy
+      // callers must not see them on a coinciding cwd.
       if (options?.workspaceId !== undefined) {
         return sessions.filter((session) => session.workspaceId === options.workspaceId);
       }
-      return sessions;
+      return sessions.filter((session) => !isHostSession(session));
+    },
+
+    async getHostTerminals(): Promise<TerminalSession[]> {
+      return listHostSessions();
     },
 
     async createTerminal(options: {
       id?: string;
       cwd: string;
-      workspaceId: string;
+      workspaceId?: string;
       name?: string;
       title?: string;
       env?: Record<string, string>;
@@ -347,7 +402,7 @@ export function createTerminalManager(
           await createTerminal({
             id: terminalId,
             cwd: options.cwd,
-            workspaceId: options.workspaceId,
+            ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
             name: options.name ?? defaultName,
             ...(options.title ? { title: options.title } : {}),
             ...(options.command ? { command: options.command } : {}),
@@ -365,7 +420,7 @@ export function createTerminalManager(
 
       terminals.push(session);
       terminalsByCwd.set(options.cwd, terminals);
-      emitTerminalsChanged({ cwd: options.cwd });
+      emitChangedForSession(session);
 
       return session;
     },
@@ -473,6 +528,13 @@ export function createTerminalManager(
       terminalsChangedListeners.add(listener);
       return () => {
         terminalsChangedListeners.delete(listener);
+      };
+    },
+
+    subscribeHostTerminalsChanged(listener: HostTerminalsChangedListener): () => void {
+      hostTerminalsChangedListeners.add(listener);
+      return () => {
+        hostTerminalsChangedListeners.delete(listener);
       };
     },
 

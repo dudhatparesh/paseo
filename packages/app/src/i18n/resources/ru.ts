@@ -1132,7 +1132,18 @@ export const ru: TranslationResources = {
         title: "Сопряжение устройства",
         description: "Подключите свой телефон к этому демону",
       },
+      hostTerminal: {
+        title: "Терминал хоста",
+        description: "Откройте оболочку на машине хоста",
+      },
     },
+  },
+  hostTerminal: {
+    title: "Терминал хоста",
+    chooseHost: "Открыть терминал хоста",
+    unsupported: "Обновите хост, чтобы использовать эту функцию.",
+    createFailed: "Не удалось открыть терминал хоста.",
+    notFound: "Этот терминал хоста больше не запущен.",
   },
   projectPicker: {
     placeholder: "Введите текст для поиска...",

@@ -1,7 +1,11 @@
 import { it, expect, afterEach } from "vitest";
 import { isPlatform } from "../test-utils/platform.js";
 import { createTerminalManager, type TerminalManager } from "./terminal-manager.js";
-import type { TerminalWorkspaceContributionChangedEvent } from "./terminal-manager.js";
+import type {
+  HostTerminalsChangedEvent,
+  TerminalWorkspaceContributionChangedEvent,
+  TerminalsChangedEvent,
+} from "./terminal-manager.js";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -76,6 +80,38 @@ it("returns existing terminals on subsequent calls", async () => {
 it("throws for relative paths", async () => {
   manager = createTerminalManager();
   await expect(manager.getTerminals("tmp")).rejects.toThrow("cwd must be absolute path");
+});
+
+it("excludes host terminals from workspace enumeration even on a matching cwd", async () => {
+  manager = createTerminalManager();
+  const cwd = realpathSync(tmpdir());
+  const workspaceTerminal = await manager.createTerminal({ cwd, workspaceId: "ws-a" });
+  const hostTerminal = await manager.createTerminal({ cwd });
+
+  const scoped = await manager.getTerminals(cwd, { workspaceId: "ws-a" });
+  expect(scoped.map((terminal) => terminal.id)).toEqual([workspaceTerminal.id]);
+
+  const unscoped = await manager.getTerminals(cwd);
+  expect(unscoped.map((terminal) => terminal.id)).toEqual([workspaceTerminal.id]);
+
+  const hostTerminals = await manager.getHostTerminals();
+  expect(hostTerminals.map((terminal) => terminal.id)).toEqual([hostTerminal.id]);
+});
+
+it("routes host terminal changes to host listeners, not cwd listeners", async () => {
+  manager = createTerminalManager();
+  const cwd = realpathSync(tmpdir());
+  const cwdEvents: TerminalsChangedEvent[] = [];
+  const hostEvents: HostTerminalsChangedEvent[] = [];
+  manager.subscribeTerminalsChanged((event) => cwdEvents.push(event));
+  manager.subscribeHostTerminalsChanged((event) => hostEvents.push(event));
+
+  const hostTerminal = await manager.createTerminal({ cwd });
+
+  expect(hostEvents.length).toBe(1);
+  expect(hostEvents[0].terminals.map((terminal) => terminal.id)).toEqual([hostTerminal.id]);
+  expect(hostEvents[0].terminals[0].workspaceId).toBeUndefined();
+  expect(cwdEvents.length).toBe(0);
 });
 
 it("accepts Windows absolute paths", async () => {

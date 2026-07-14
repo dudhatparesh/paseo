@@ -1092,7 +1092,18 @@ export const zhCN: TranslationResources = {
         title: "配对设备",
         description: "将手机连接到此 daemon",
       },
+      hostTerminal: {
+        title: "主机终端",
+        description: "在主机上打开一个 shell",
+      },
     },
+  },
+  hostTerminal: {
+    title: "主机终端",
+    chooseHost: "打开主机终端",
+    unsupported: "请更新主机以使用此功能。",
+    createFailed: "无法打开主机终端。",
+    notFound: "此主机终端已不再运行。",
   },
   projectPicker: {
     placeholder: "输入以搜索...",

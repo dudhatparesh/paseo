@@ -9,10 +9,13 @@ import type {
   SessionOutboundMessage,
   SubscribeTerminalRequest,
   SubscribeTerminalsRequest,
+  TerminalHostCreateRequest,
+  TerminalHostListRequest,
   TerminalInput,
   UnsubscribeTerminalRequest,
   UnsubscribeTerminalsRequest,
 } from "../server/messages.js";
+import { homedir } from "node:os";
 import { killTerminalsForWorkspace as killWorkspaceTerminals } from "../server/workspace-archive-service.js";
 import {
   TerminalStreamOpcode,
@@ -99,6 +102,8 @@ type TerminalDispatchableMessage =
   | UnsubscribeTerminalsRequest
   | ListTerminalsRequest
   | CreateTerminalRequest
+  | TerminalHostCreateRequest
+  | TerminalHostListRequest
   | SubscribeTerminalRequest
   | UnsubscribeTerminalRequest
   | TerminalInput
@@ -111,6 +116,8 @@ const TERMINAL_MESSAGE_TYPES: ReadonlySet<TerminalDispatchableMessage["type"]> =
   "unsubscribe_terminals_request",
   "list_terminals_request",
   "create_terminal_request",
+  "terminal.host.create.request",
+  "terminal.host.list.request",
   "subscribe_terminal_request",
   "unsubscribe_terminal_request",
   "terminal_input",
@@ -140,6 +147,7 @@ export class TerminalSessionController {
     { cwd: string; workspaceId: string | undefined }
   >();
   private unsubscribeTerminalsChanged: (() => void) | null = null;
+  private unsubscribeHostTerminalsChanged: (() => void) | null = null;
   private readonly exitSubscriptions = new Map<string, () => void>();
   private readonly activeStreams = new Map<number, ActiveTerminalStream>();
   private readonly idToSlot = new Map<string, number>();
@@ -167,6 +175,22 @@ export class TerminalSessionController {
     this.unsubscribeTerminalsChanged = this.terminalManager.subscribeTerminalsChanged((event) => {
       void this.handleTerminalsChanged(event);
     });
+    this.unsubscribeHostTerminalsChanged = this.terminalManager.subscribeHostTerminalsChanged(
+      (event) => {
+        this.emit({
+          type: "terminal.host.changed",
+          payload: {
+            terminals: event.terminals.map((terminal) => ({
+              id: terminal.id,
+              name: terminal.name,
+              cwd: terminal.cwd,
+              ...(terminal.title ? { title: terminal.title } : {}),
+              activity: terminal.activity,
+            })),
+          },
+        });
+      },
+    );
   }
 
   getMetrics(): TerminalSessionControllerMetrics {
@@ -191,6 +215,10 @@ export class TerminalSessionController {
         return this.handleListTerminalsRequest(msg);
       case "create_terminal_request":
         return this.handleCreateTerminalRequest(msg);
+      case "terminal.host.create.request":
+        return this.handleHostTerminalCreateRequest(msg);
+      case "terminal.host.list.request":
+        return this.handleHostTerminalListRequest(msg);
       case "subscribe_terminal_request":
         return this.handleSubscribeTerminalRequest(msg);
       case "unsubscribe_terminal_request":
@@ -272,6 +300,10 @@ export class TerminalSessionController {
       this.unsubscribeTerminalsChanged();
       this.unsubscribeTerminalsChanged = null;
     }
+    if (this.unsubscribeHostTerminalsChanged) {
+      this.unsubscribeHostTerminalsChanged();
+      this.unsubscribeHostTerminalsChanged = null;
+    }
     this.subscribedDirectories.clear();
 
     for (const unsubscribeExit of this.exitSubscriptions.values()) {
@@ -308,7 +340,7 @@ export class TerminalSessionController {
     terminals: Array<{
       id: string;
       name: string;
-      workspaceId: string;
+      workspaceId?: string;
       title?: string;
       activity: TerminalActivity | null;
     }>;
@@ -327,7 +359,7 @@ export class TerminalSessionController {
   ): {
     id: string;
     name: string;
-    workspaceId: string;
+    workspaceId?: string;
     title?: string;
     activity: TerminalActivity | null;
   } {
@@ -336,9 +368,30 @@ export class TerminalSessionController {
     return {
       id: terminal.id,
       name: terminal.name,
-      workspaceId: terminal.workspaceId,
+      ...(terminal.workspaceId !== undefined ? { workspaceId: terminal.workspaceId } : {}),
       ...(title ? { title } : {}),
       activity,
+    };
+  }
+
+  // Host terminal payloads carry cwd: there is no surrounding workspace to
+  // imply the directory.
+  private toHostTerminalInfo(
+    terminal: Pick<TerminalSession, "id" | "name" | "cwd" | "getTitle" | "getActivity">,
+  ): {
+    id: string;
+    name: string;
+    cwd: string;
+    title?: string;
+    activity: TerminalActivity | null;
+  } {
+    const title = terminal.getTitle();
+    return {
+      id: terminal.id,
+      name: terminal.name,
+      cwd: terminal.cwd,
+      ...(title ? { title } : {}),
+      activity: terminal.getActivity(),
     };
   }
 
@@ -577,6 +630,78 @@ export class TerminalSessionController {
           error: (error as Error).message,
           requestId: msg.requestId,
         },
+      });
+    }
+  }
+
+  private async handleHostTerminalCreateRequest(msg: TerminalHostCreateRequest): Promise<void> {
+    if (!this.terminalManager) {
+      this.emit({
+        type: "terminal.host.create.response",
+        payload: {
+          terminal: null,
+          error: "Terminal manager not available",
+          requestId: msg.requestId,
+        },
+      });
+      return;
+    }
+    try {
+      // The daemon resolves the starting directory itself: clients cannot know
+      // the daemon user's home, and host terminals are the fresh-machine
+      // bootstrap surface where no workspace exists yet.
+      const session = await this.terminalManager.createTerminal({
+        cwd: homedir(),
+        ...(msg.name ? { name: msg.name } : {}),
+        ...(msg.size ? { rows: msg.size.rows, cols: msg.size.cols } : {}),
+      });
+      this.ensureExitSubscription(session);
+      this.emit({
+        type: "terminal.host.create.response",
+        payload: {
+          terminal: this.toHostTerminalInfo(session),
+          error: null,
+          requestId: msg.requestId,
+        },
+      });
+    } catch (error) {
+      this.sessionLogger.error({ err: error }, "Failed to create host terminal");
+      this.emit({
+        type: "terminal.host.create.response",
+        payload: {
+          terminal: null,
+          error: (error as Error).message,
+          requestId: msg.requestId,
+        },
+      });
+    }
+  }
+
+  private async handleHostTerminalListRequest(msg: TerminalHostListRequest): Promise<void> {
+    if (!this.terminalManager) {
+      this.emit({
+        type: "terminal.host.list.response",
+        payload: { terminals: [], requestId: msg.requestId },
+      });
+      return;
+    }
+    try {
+      const sessions = await this.terminalManager.getHostTerminals();
+      for (const session of sessions) {
+        this.ensureExitSubscription(session);
+      }
+      this.emit({
+        type: "terminal.host.list.response",
+        payload: {
+          terminals: sessions.map((session) => this.toHostTerminalInfo(session)),
+          requestId: msg.requestId,
+        },
+      });
+    } catch (error) {
+      this.sessionLogger.error({ err: error }, "Failed to list host terminals");
+      this.emit({
+        type: "terminal.host.list.response",
+        payload: { terminals: [], requestId: msg.requestId },
       });
     }
   }
