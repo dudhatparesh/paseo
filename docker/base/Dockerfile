@@ -42,6 +42,11 @@ ENV HOME=/home/paseo \
     XDG_CACHE_HOME=/home/paseo/.cache \
     ONNXRUNTIME_NODE_INSTALL=skip
 
+# User-scope installers (Claude Code's install.sh, pipx, uv) land binaries in
+# ~/.local/bin. The daemon discovers provider CLIs via its own PATH, so without
+# this an agent installed from a terminal stays invisible to the provider list.
+ENV PATH="/home/paseo/.local/bin:${PATH}"
+
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
