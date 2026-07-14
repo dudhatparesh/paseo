@@ -1357,7 +1357,7 @@ test("reloadAgentSession completes when the previous session close hangs", async
   }
 });
 
-test("cancelAgentRun completes when provider interrupt hangs", async () => {
+test("cancelAgentRun preserves running state when the provider interrupt hangs", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-interrupt-timeout-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
@@ -1424,8 +1424,77 @@ test("cancelAgentRun completes when provider interrupt hangs", async () => {
       });
     });
 
-    await expect(manager.cancelAgentRun(snapshot.id)).resolves.toBe(true);
+    await expect(manager.cancelAgentRun(snapshot.id)).resolves.toBe(false);
     expect(client.session.interruptCalled).toBe(true);
+    expect(manager.getAgent(snapshot.id)?.lifecycle).toBe("running");
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("cancelAgentRun preserves the active turn when the provider rejects the interrupt", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-interrupt-rejected-"));
+  const storagePath = join(workdir, "agents");
+  const storage = new AgentStorage(storagePath, logger);
+
+  class RejectingInterruptSession extends TestAgentSession {
+    override async startTurn(): Promise<{ turnId: string }> {
+      const turnId = "provider-still-active-turn";
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+      }, 0);
+      return { turnId };
+    }
+
+    override async interrupt(): Promise<void> {
+      throw new Error("A foreground turn is already active");
+    }
+  }
+
+  class RejectingInterruptClient extends TestAgentClient {
+    readonly session = new RejectingInterruptSession({
+      provider: "codex",
+      cwd: workdir,
+    });
+
+    override async createSession(): Promise<AgentSession> {
+      return this.session;
+    }
+  }
+
+  const client = new RejectingInterruptClient();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000304",
+  });
+
+  try {
+    const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+
+    const run = manager.streamAgent(snapshot.id, "Wait for the child.");
+    const runDrain = (async () => {
+      for await (const _event of run) {
+        // Keep the foreground run subscribed until the provider completes it.
+      }
+    })();
+    await manager.waitForAgentRunStart(snapshot.id);
+
+    await expect(manager.cancelAgentRun(snapshot.id)).resolves.toBe(false);
+    expect(manager.getAgent(snapshot.id)).toMatchObject({
+      lifecycle: "running",
+      activeForegroundTurnId: "provider-still-active-turn",
+    });
+
+    client.session.pushEvent({
+      type: "turn_completed",
+      provider: "codex",
+      turnId: "provider-still-active-turn",
+    });
+    await runDrain;
   } finally {
     rmSync(workdir, { recursive: true, force: true });
   }

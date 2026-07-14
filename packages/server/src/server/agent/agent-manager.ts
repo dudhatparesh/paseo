@@ -2157,7 +2157,10 @@ export class AgentManager {
       return false;
     }
 
-    await this.interruptSession(agent.session, agentId);
+    const interruptAcknowledged = await this.interruptSession(agent.session, agentId);
+    if (!interruptAcknowledged) {
+      return false;
+    }
 
     // The interrupt will produce a turn_canceled/turn_failed event via subscribe(),
     // which flows through the session event dispatcher and settles the foreground turn waiter.
@@ -2245,7 +2248,7 @@ export class AgentManager {
     return true;
   }
 
-  private async interruptSession(session: AgentSession, agentId: string): Promise<void> {
+  private async interruptSession(session: AgentSession, agentId: string): Promise<boolean> {
     try {
       const result = await this.waitWithTimeout({
         operation: session.interrupt(),
@@ -2263,9 +2266,12 @@ export class AgentManager {
           { agentId, timeoutMs: this.rescueTimeouts.interruptSessionMs },
           "Timed out interrupting session during cancel",
         );
+        return false;
       }
+      return true;
     } catch (error) {
       this.logger.error({ err: error, agentId }, "Failed to interrupt session");
+      return false;
     }
   }
 
