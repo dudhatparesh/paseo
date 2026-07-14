@@ -98,6 +98,18 @@ export class PaseoBrowserWebviewRegistry {
     return this.workspaceIdsByBrowserId.get(browserId) ?? null;
   }
 
+  public hasBrowserInOtherHostWindow(hostWebContentsId: number, browserId: string): boolean {
+    for (const registration of this.registrationsByWebContentsId.values()) {
+      if (
+        registration.browserId === browserId &&
+        registration.hostWebContentsId !== hostWebContentsId
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   public unregisterHostWebContents(hostWebContentsId: number): void {
     for (const [webContentsId, registration] of this.registrationsByWebContentsId) {
       if (registration.hostWebContentsId === hostWebContentsId) {
@@ -211,14 +223,6 @@ export class PaseoBrowserWebviewRegistry {
 
     this.registrationsByWebContentsId.delete(webContentsId);
     this.webContentsIdsByHostAndBrowserId.delete(this.hostBrowserKey(hostWebContentsId, browserId));
-
-    if (!this.hasBrowser(browserId)) {
-      if (!options.preserveActiveBrowser) {
-        this.workspaceIdsByBrowserId.delete(browserId);
-        this.deleteActiveBrowserReferences(browserId);
-      }
-      return;
-    }
 
     if (
       !options.preserveActiveBrowser &&

@@ -335,11 +335,20 @@ ipcMain.handle("paseo:browser:open-devtools", (event, browserId: unknown) => {
   return result;
 });
 
-ipcMain.handle("paseo:browser:clear-partition", async (_event, browserId: unknown) => {
+ipcMain.handle("paseo:browser:clear-partition", async (event, browserId: unknown) => {
   if (typeof browserId !== "string" || browserId.trim().length === 0) {
     return;
   }
-  const partition = `persist:paseo-browser-${browserId}`;
+  const normalizedBrowserId = browserId.trim();
+  if (
+    getPaseoBrowserWebviewRegistry().hasBrowserInOtherHostWindow(
+      event.sender.id,
+      normalizedBrowserId,
+    )
+  ) {
+    return;
+  }
+  const partition = `persist:paseo-browser-${normalizedBrowserId}`;
   await session.fromPartition(partition).clearStorageData();
 });
 

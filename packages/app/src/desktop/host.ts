@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import { getElectronHost } from "@/desktop/electron/host";
-import type { BrowserShortcutPrefix } from "@/keyboard/browser-shortcuts";
+import type { BrowserKeyboardPolicy } from "@/keyboard/browser-shortcuts";
 import type { SessionInboundMessage, SessionOutboundMessage } from "@getpaseo/protocol/messages";
 
 type BrowserAutomationExecuteRequest = Extract<
@@ -128,7 +128,7 @@ export interface DesktopBrowserNewTabRequestEvent {
 }
 
 export interface DesktopBrowserBridge {
-  setShortcutPolicy?: (input: { prefixes: BrowserShortcutPrefix[] }) => Promise<void>;
+  setShortcutPolicy?: (input: BrowserKeyboardPolicy) => Promise<void>;
   registerWorkspaceBrowser?: (input: { browserId: string; workspaceId: string }) => Promise<void>;
   unregisterWorkspaceBrowser?: (browserId: string) => Promise<void>;
   setWorkspaceActiveBrowser?: (input: {

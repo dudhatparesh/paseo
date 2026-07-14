@@ -265,4 +265,49 @@ describe("PaseoBrowserWebviewRegistry", () => {
     expect(registry.getActiveBrowserIdForHostWindow(101)).toBe("browser-a");
     expect(registry.getActiveBrowserIdForHostWindow(202)).toBeNull();
   });
+
+  it("keeps a pre-attach selection when another host tears down the same browser", () => {
+    const registry = new PaseoBrowserWebviewRegistry();
+
+    registry.setWorkspaceActiveBrowser({
+      hostWebContentsId: 101,
+      workspaceId: "workspace-a",
+      browserId: "browser-a",
+    });
+    registry.registerWebContents({
+      webContentsId: 22,
+      browserId: "browser-a",
+      hostWebContentsId: 202,
+    });
+    registry.unregisterWebContents(22);
+    registry.registerWebContents({
+      webContentsId: 11,
+      browserId: "browser-a",
+      hostWebContentsId: 101,
+    });
+
+    expect(registry.getActiveBrowserIdForHostWindow(101)).toBe("browser-a");
+  });
+
+  it("reports when another host still owns the same browser", () => {
+    const registry = new PaseoBrowserWebviewRegistry();
+    registry.registerWebContents({
+      webContentsId: 11,
+      browserId: "browser-a",
+      hostWebContentsId: 101,
+    });
+    registry.registerWebContents({
+      webContentsId: 22,
+      browserId: "browser-a",
+      hostWebContentsId: 202,
+    });
+
+    expect(registry.hasBrowserInOtherHostWindow(101, "browser-a")).toBe(true);
+    expect(registry.hasBrowserInOtherHostWindow(202, "browser-a")).toBe(true);
+    expect(registry.hasBrowserInOtherHostWindow(101, "browser-b")).toBe(false);
+
+    registry.unregisterWebContents(22);
+
+    expect(registry.hasBrowserInOtherHostWindow(101, "browser-a")).toBe(false);
+  });
 });
