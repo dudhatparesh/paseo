@@ -29,16 +29,28 @@ export XDG_DATA_HOME
 export XDG_STATE_HOME
 export XDG_CACHE_HOME
 
+# Creates $1 and hands root-owned directories back to the paseo user — including
+# the intermediates mkdir -p creates inside $HOME. With a bind-mounted
+# /home/paseo, chowning only the leaf leaves e.g. ~/.local root-owned (created
+# as an intermediate of XDG_DATA_HOME=~/.local/share), and agent installers
+# then fail with EACCES on mkdir ~/.local/bin. Never ascends outside $HOME so a
+# custom dir like /etc/claude cannot cause a chown of system directories.
 ensure_dir() {
   local dir="$1"
   mkdir -p "$dir"
-  if [[ "$(id -u)" == "0" ]]; then
-    local owner
-    owner="$(stat -c "%u" "$dir")"
-    if [[ "$owner" == "0" ]]; then
-      chown paseo:paseo "$dir"
-    fi
+  if [[ "$(id -u)" != "0" ]]; then
+    return
   fi
+  local current="$dir"
+  while :; do
+    if [[ "$(stat -c "%u" "$current")" == "0" ]]; then
+      chown paseo:paseo "$current"
+    fi
+    case "$current" in
+      "$HOME"/*) current="$(dirname "$current")" ;;
+      *) break ;;
+    esac
+  done
 }
 
 ensure_dir "$HOME"
