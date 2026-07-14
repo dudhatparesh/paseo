@@ -1128,7 +1128,18 @@ export const ptBR: TranslationResources = {
         title: "Parear dispositivo",
         description: "Conecte seu celular a este daemon",
       },
+      hostTerminal: {
+        title: "Terminal do host",
+        description: "Abra um shell na máquina do host",
+      },
     },
+  },
+  hostTerminal: {
+    title: "Terminal do host",
+    chooseHost: "Abrir terminal do host",
+    unsupported: "Atualize o host para usar este recurso.",
+    createFailed: "Não foi possível abrir o terminal do host.",
+    notFound: "Este terminal do host não está mais em execução.",
   },
   projectPicker: {
     placeholder: "Digite para pesquisar...",

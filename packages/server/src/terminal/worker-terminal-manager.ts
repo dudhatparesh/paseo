@@ -16,6 +16,8 @@ import type {
 } from "./terminal.js";
 import type { CaptureTerminalLinesResult } from "./terminal-capture.js";
 import type {
+  HostTerminalsChangedEvent,
+  HostTerminalsChangedListener,
   TerminalActivityListener,
   TerminalActivityTransitionEvent,
   TerminalListItem,
@@ -36,18 +38,10 @@ import type {
 
 const REQUEST_TIMEOUT_MS = 10000;
 
-type RequiredWorkerTerminalInfo = WorkerTerminalInfo & { workspaceId: string };
-
-function requiredWorkspaceId(workspaceId: string | undefined): string {
-  if (workspaceId === undefined) {
-    throw new Error("workspaceId is required");
-  }
-  return workspaceId;
-}
-
-function asRequiredWorkerTerminalInfo(info: WorkerTerminalInfo): RequiredWorkerTerminalInfo {
-  requiredWorkspaceId(info.workspaceId);
-  return info as RequiredWorkerTerminalInfo;
+// A terminal with no workspaceId is a host terminal: owned by the daemon, never
+// surfaced through workspace/cwd-scoped enumeration or change events.
+function isHostTerminalInfo(info: WorkerTerminalInfo): boolean {
+  return info.workspaceId === undefined;
 }
 
 type TerminalWorkerRequestInput = TerminalWorkerRequest extends infer Request
@@ -63,7 +57,7 @@ interface PendingRequest {
 }
 
 interface WorkerTerminalRecord {
-  info: RequiredWorkerTerminalInfo;
+  info: WorkerTerminalInfo;
   state: TerminalState;
   activity: TerminalActivity | null;
   // Cached input-mode preamble from the worker (the authoritative tracker lives
@@ -128,12 +122,12 @@ function isResponse(message: TerminalWorkerToParentMessage): message is Terminal
   return message.type === "response";
 }
 
-function cloneTerminalInfo(info: RequiredWorkerTerminalInfo): RequiredWorkerTerminalInfo {
+function cloneTerminalInfo(info: WorkerTerminalInfo): WorkerTerminalInfo {
   return {
     id: info.id,
     name: info.name,
     cwd: info.cwd,
-    workspaceId: info.workspaceId,
+    ...(info.workspaceId !== undefined ? { workspaceId: info.workspaceId } : {}),
     ...(info.title ? { title: info.title } : {}),
     activity: info.activity,
   };
@@ -157,6 +151,7 @@ export function createWorkerTerminalManager(
   const terminalIdsByCwd = new Map<string, Set<string>>();
   const terminalActivityTokenById = new Map<string, string>();
   const terminalsChangedListeners = new Set<TerminalsChangedListener>();
+  const hostTerminalsChangedListeners = new Set<HostTerminalsChangedListener>();
   const terminalActivityListeners = new Set<TerminalActivityListener>();
   const terminalWorkspaceContributionChangedListeners =
     new Set<TerminalWorkspaceContributionChangedListener>();
@@ -195,6 +190,17 @@ export function createWorkerTerminalManager(
     }
   }
 
+  function toTerminalListItem(record: WorkerTerminalRecord): TerminalListItem {
+    return {
+      id: record.info.id,
+      name: record.info.name,
+      cwd: record.info.cwd,
+      ...(record.info.workspaceId !== undefined ? { workspaceId: record.info.workspaceId } : {}),
+      ...(record.info.title ? { title: record.info.title } : {}),
+      activity: record.activity,
+    };
+  }
+
   function listTerminalItemsForCwd(cwd: string): TerminalListItem[] {
     const terminalIds = terminalIdsByCwd.get(cwd);
     if (!terminalIds) {
@@ -203,23 +209,51 @@ export function createWorkerTerminalManager(
     const terminals: TerminalListItem[] = [];
     for (const terminalId of terminalIds) {
       const record = recordsById.get(terminalId);
-      if (!record) {
+      if (!record || isHostTerminalInfo(record.info)) {
         continue;
       }
-      terminals.push({
-        id: record.info.id,
-        name: record.info.name,
-        cwd: record.info.cwd,
-        workspaceId: record.info.workspaceId,
-        ...(record.info.title ? { title: record.info.title } : {}),
-        activity: record.activity,
-      });
+      terminals.push(toTerminalListItem(record));
     }
     return terminals;
   }
 
+  function listHostTerminalItems(): TerminalListItem[] {
+    const terminals: TerminalListItem[] = [];
+    for (const record of recordsById.values()) {
+      if (isHostTerminalInfo(record.info)) {
+        terminals.push(toTerminalListItem(record));
+      }
+    }
+    return terminals;
+  }
+
+  function emitHostTerminalsChanged(): void {
+    if (hostTerminalsChangedListeners.size === 0) {
+      return;
+    }
+    const event: HostTerminalsChangedEvent = { terminals: listHostTerminalItems() };
+    for (const listener of Array.from(hostTerminalsChangedListeners)) {
+      try {
+        listener(event);
+      } catch {
+        // no-op
+      }
+    }
+  }
+
+  function emitChangedForInfo(info: WorkerTerminalInfo): void {
+    if (isHostTerminalInfo(info)) {
+      emitHostTerminalsChanged();
+    } else {
+      emitTerminalsChanged({
+        cwd: info.cwd,
+        terminals: listTerminalItemsForCwd(info.cwd),
+      });
+    }
+  }
+
   function registerRecord(input: {
-    info: RequiredWorkerTerminalInfo;
+    info: WorkerTerminalInfo;
     state: TerminalState;
   }): TerminalSession {
     const existing = recordsById.get(input.info.id);
@@ -448,17 +482,14 @@ export function createWorkerTerminalManager(
     record.exitListeners.clear();
     const previousBucket = deriveTerminalActivityStatusBucket(record.activity);
     const removedRecord = removeRecord(message.terminalId);
-    if (previousBucket !== null && removedRecord) {
+    if (previousBucket !== null && removedRecord && removedRecord.info.workspaceId !== undefined) {
       emitTerminalWorkspaceContributionChanged({
         terminalId: removedRecord.info.id,
         cwd: removedRecord.info.cwd,
         workspaceId: removedRecord.info.workspaceId,
       });
     }
-    emitTerminalsChanged({
-      cwd: record.info.cwd,
-      terminals: listTerminalItemsForCwd(record.info.cwd),
-    });
+    emitChangedForInfo(record.info);
   }
 
   function handleTerminalTitleChangeEvent(
@@ -482,10 +513,7 @@ export function createWorkerTerminalManager(
     for (const listener of Array.from(record.titleChangeListeners)) {
       listener(message.title);
     }
-    emitTerminalsChanged({
-      cwd: record.info.cwd,
-      terminals: listTerminalItemsForCwd(record.info.cwd),
-    });
+    emitChangedForInfo(record.info);
   }
 
   function handleTerminalCommandFinishedEvent(
@@ -520,36 +548,30 @@ export function createWorkerTerminalManager(
       terminalId: record.info.id,
       name: record.info.name,
       cwd: record.info.cwd,
-      workspaceId: record.info.workspaceId,
+      ...(record.info.workspaceId !== undefined ? { workspaceId: record.info.workspaceId } : {}),
       activity: message.activity,
       previous: message.previous,
     });
     const previousBucket = deriveTerminalActivityStatusBucket(previousActivity);
     const nextBucket = deriveTerminalActivityStatusBucket(message.activity);
-    if (previousBucket !== nextBucket) {
+    if (previousBucket !== nextBucket && record.info.workspaceId !== undefined) {
       emitTerminalWorkspaceContributionChanged({
         terminalId: record.info.id,
         cwd: record.info.cwd,
         workspaceId: record.info.workspaceId,
       });
     }
-    emitTerminalsChanged({
-      cwd: record.info.cwd,
-      terminals: listTerminalItemsForCwd(record.info.cwd),
-    });
+    emitChangedForInfo(record.info);
   }
 
   function handleWorkerEvent(message: TerminalWorkerToParentMessage): void {
     switch (message.type) {
       case "terminalCreated": {
         registerRecord({
-          info: asRequiredWorkerTerminalInfo(message.terminal),
+          info: message.terminal,
           state: message.state,
         });
-        emitTerminalsChanged({
-          cwd: message.terminal.cwd,
-          terminals: listTerminalItemsForCwd(message.terminal.cwd),
-        });
+        emitChangedForInfo(message.terminal);
         return;
       }
 
@@ -671,23 +693,32 @@ export function createWorkerTerminalManager(
       }
 
       // When the query carries a workspaceId, two workspaces sharing a cwd must
-      // not see each other's terminals. A missing owner is not workspace
-      // membership; unscoped callers can still list those legacy terminals.
+      // not see each other's terminals. Host terminals (no owner workspace) are
+      // excluded from workspace enumeration entirely — even unscoped legacy
+      // callers must not see them on a coinciding cwd.
       if (options?.workspaceId !== undefined) {
         return sessions.filter((session) => session.workspaceId === options.workspaceId);
+      }
+      return sessions.filter((session) => session.workspaceId !== undefined);
+    },
+
+    async getHostTerminals(): Promise<TerminalSession[]> {
+      const sessions: TerminalSession[] = [];
+      for (const record of recordsById.values()) {
+        if (isHostTerminalInfo(record.info)) {
+          sessions.push(record.session);
+        }
       }
       return sessions;
     },
 
-    async createTerminal(
-      options: WorkerCreateTerminalOptions & { workspaceId: string },
-    ): Promise<TerminalSession> {
+    async createTerminal(options: WorkerCreateTerminalOptions): Promise<TerminalSession> {
       const terminalId = options.id ?? randomUUID();
       const activityToken = createActivityToken();
       const terminalActivityUrl = managerOptions.getTerminalActivityUrl?.() ?? null;
       terminalActivityTokenById.set(terminalId, activityToken);
       let result: {
-        terminal: RequiredWorkerTerminalInfo;
+        terminal: WorkerTerminalInfo;
         state: TerminalState;
       };
       try {
@@ -700,7 +731,7 @@ export function createWorkerTerminalManager(
             activityUrl: terminalActivityUrl,
           },
         })) as {
-          terminal: RequiredWorkerTerminalInfo;
+          terminal: WorkerTerminalInfo;
           state: TerminalState;
         };
       } catch (error) {
@@ -837,6 +868,13 @@ export function createWorkerTerminalManager(
       terminalsChangedListeners.add(listener);
       return () => {
         terminalsChangedListeners.delete(listener);
+      };
+    },
+
+    subscribeHostTerminalsChanged(listener: HostTerminalsChangedListener): () => void {
+      hostTerminalsChangedListeners.add(listener);
+      return () => {
+        hostTerminalsChangedListeners.delete(listener);
       };
     },
 

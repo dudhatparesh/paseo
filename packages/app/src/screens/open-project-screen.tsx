@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { View, Text, Pressable } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useRouter } from "expo-router";
-import { FolderOpen, Inbox, Plug, Smartphone } from "lucide-react-native";
+import { FolderOpen, Inbox, Plug, Smartphone, Terminal } from "lucide-react-native";
 import { PaseoLogo } from "@/components/icons/paseo-logo";
 import { CommunityLinks } from "@/components/community-links";
 import { MenuHeader } from "@/components/headers/menu-header";
@@ -23,6 +23,7 @@ import { buildHostAgentDetailRoute, buildSettingsHostSectionRoute } from "@/util
 import { ImportSessionSheet } from "@/components/import-session-sheet";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
 import { useOpenProject } from "@/hooks/use-open-project";
+import { useOpenHostTerminal } from "@/hooks/use-open-host-terminal";
 import type { Href } from "expo-router";
 
 export function OpenProjectScreen() {
@@ -77,6 +78,8 @@ export function OpenProjectScreen() {
     [importServerId, openImportedProject, router],
   );
 
+  const handleOpenHostTerminal = useOpenHostTerminal();
+
   const handleOpenProviders = useCallback(() => {
     chooseHost({
       title: "Choose host",
@@ -116,6 +119,13 @@ export function OpenProjectScreen() {
             description={t("openProject.tiles.setupProviders.description")}
             onPress={handleOpenProviders}
             testID="open-project-setup-providers"
+          />
+          <HomeTile
+            icon={Terminal}
+            title={t("openProject.tiles.hostTerminal.title")}
+            description={t("openProject.tiles.hostTerminal.description")}
+            onPress={handleOpenHostTerminal}
+            testID="open-project-host-terminal"
           />
           {localServerId ? (
             <HomeTile

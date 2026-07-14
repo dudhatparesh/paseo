@@ -201,11 +201,8 @@ async function handleCreateTerminalRequest(message: TerminalCreateRequest): Prom
   };
   inFlightTerminalCreateRequest = request;
   try {
-    const { workspaceId } = message.options;
-    if (!workspaceId) {
-      throw new Error("workspaceId is required");
-    }
-    const session = await manager.createTerminal({ ...message.options, workspaceId });
+    // workspaceId may be absent: that is a host terminal owned by the daemon.
+    const session = await manager.createTerminal(message.options);
     if (request.errorReported) {
       session.kill();
       return;

@@ -1113,7 +1113,18 @@ export const en = {
         title: "Pair device",
         description: "Connect your phone to this daemon",
       },
+      hostTerminal: {
+        title: "Host terminal",
+        description: "Open a shell on the host machine",
+      },
     },
+  },
+  hostTerminal: {
+    title: "Host terminal",
+    chooseHost: "Open host terminal",
+    unsupported: "Update the host to use this.",
+    createFailed: "Failed to open host terminal.",
+    notFound: "This host terminal is no longer running.",
   },
   projectPicker: {
     placeholder: "Type to search...",

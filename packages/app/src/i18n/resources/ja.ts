@@ -1120,7 +1120,18 @@ export const ja: TranslationResources = {
         title: "デバイスをペアリング",
         description: "このデーモンにスマートフォンを接続",
       },
+      hostTerminal: {
+        title: "ホストターミナル",
+        description: "ホストマシンでシェルを開きます",
+      },
     },
+  },
+  hostTerminal: {
+    title: "ホストターミナル",
+    chooseHost: "ホストターミナルを開く",
+    unsupported: "この機能を使うにはホストを更新してください。",
+    createFailed: "ホストターミナルを開けませんでした。",
+    notFound: "このホストターミナルは実行されていません。",
   },
   projectPicker: {
     placeholder: "入力して検索...",
