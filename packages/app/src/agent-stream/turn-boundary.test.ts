@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { StreamItem } from "@/types/stream";
-import { resolveAssistantTurnBoundaryMessageId } from "./turn-boundary";
+import {
+  resolveAssistantTurnBoundaryMessageId,
+  resolveAssistantTurnForkBoundary,
+} from "./turn-boundary";
 
 function timestamp(seed: number): Date {
   return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);
@@ -60,5 +63,24 @@ describe("resolveAssistantTurnBoundaryMessageId", () => {
         startIndex: 0,
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("resolveAssistantTurnForkBoundary", () => {
+  it("forks a failed assistant turn from its Paseo timeline cursor without a provider message id", () => {
+    const failedTurn = {
+      ...assistantMessage("assistant-error", 2),
+      timelineCursor: { epoch: "timeline-1", seq: 42 },
+    };
+
+    expect(
+      resolveAssistantTurnForkBoundary({
+        items: [userMessage("user-1", 1), failedTurn],
+        startIndex: 1,
+        supportsTimelineCursor: true,
+      }),
+    ).toEqual({
+      boundaryCursor: { epoch: "timeline-1", seq: 42 },
+    });
   });
 });
