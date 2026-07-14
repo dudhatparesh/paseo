@@ -20,7 +20,7 @@ interface OverviewGroupProps {
   children: ReactNode;
 }
 
-const SINGLE_TOOL_CALL_DETAIL_MAX_HEIGHT = 400;
+const TOOL_CALL_GROUP_MAX_HEIGHT = 400;
 
 function joinSummaryParts(parts: string[], conjunction: string): string {
   if (parts.length === 0) {
@@ -111,7 +111,7 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
         <ToolCallDetailsContent
           detail={latest.detail}
           errorText={latest.presentation.errorText}
-          maxHeight={SINGLE_TOOL_CALL_DETAIL_MAX_HEIGHT}
+          maxHeight={TOOL_CALL_GROUP_MAX_HEIGHT}
           showLoadingSkeleton={latest.presentation.isLoadingDetails}
         />
       );
@@ -151,7 +151,7 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
 
 const styles = StyleSheet.create((theme) => ({
   scroll: {
-    maxHeight: 400,
+    maxHeight: TOOL_CALL_GROUP_MAX_HEIGHT,
   },
   content: {
     paddingTop: theme.spacing[1],
