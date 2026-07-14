@@ -216,17 +216,21 @@ export function curateAgentActivity(
     : "No activity to display.";
 }
 
+interface ForkCursorBoundary {
+  timelineEpoch: string;
+  cursor: { epoch: string; seq: number };
+}
+
 function selectForkContextRows(input: {
   rows: readonly AgentTimelineRow[];
-  timelineEpoch?: string;
-  boundaryCursor?: { epoch: string; seq: number } | null;
+  cursorBoundary?: ForkCursorBoundary | null;
   boundaryMessageId?: string | null;
 }): {
   items: AgentTimelineItem[];
   boundaryCursor: { epoch: string; seq: number } | null;
   boundaryMessageId: string | null;
 } {
-  const boundaryCursor = input.boundaryCursor ?? null;
+  const boundaryCursor = input.cursorBoundary?.cursor ?? null;
   const boundaryMessageId = input.boundaryMessageId?.trim() || null;
   if (!boundaryCursor && !boundaryMessageId) {
     const projected = projectTimelineRows({ rows: input.rows, mode: "projected" });
@@ -237,7 +241,10 @@ function selectForkContextRows(input: {
     };
   }
 
-  if (boundaryCursor && boundaryCursor.epoch !== input.timelineEpoch) {
+  if (
+    input.cursorBoundary &&
+    input.cursorBoundary.cursor.epoch !== input.cursorBoundary.timelineEpoch
+  ) {
     throw new Error("Selected timeline position is no longer available.");
   }
   const boundaryIndex = boundaryCursor
@@ -286,8 +293,7 @@ function buildForkContextText(input: {
 
 export function buildAgentForkContextAttachment(input: {
   rows: readonly AgentTimelineRow[];
-  timelineEpoch?: string;
-  boundaryCursor?: { epoch: string; seq: number } | null;
+  cursorBoundary?: ForkCursorBoundary | null;
   boundaryMessageId?: string | null;
   agentTitle?: string | null;
   cwd?: string | null;
@@ -299,8 +305,7 @@ export function buildAgentForkContextAttachment(input: {
 } {
   const selected = selectForkContextRows({
     rows: input.rows,
-    timelineEpoch: input.timelineEpoch,
-    boundaryCursor: input.boundaryCursor,
+    cursorBoundary: input.cursorBoundary,
     boundaryMessageId: input.boundaryMessageId,
   });
   const entries = curateProjectedActivityEntries(selected.items, {

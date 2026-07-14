@@ -5480,8 +5480,9 @@ export class Session {
       });
       const forkContext = buildAgentForkContextAttachment({
         rows: timeline.rows,
-        timelineEpoch: timeline.epoch,
-        boundaryCursor: msg.boundaryCursor,
+        cursorBoundary: msg.boundaryCursor
+          ? { timelineEpoch: timeline.epoch, cursor: msg.boundaryCursor }
+          : null,
         boundaryMessageId: msg.boundaryMessageId,
         agentTitle: agentPayload.title,
         cwd: snapshot.cwd,

@@ -83,4 +83,47 @@ describe("resolveAssistantTurnForkBoundary", () => {
       boundaryCursor: { epoch: "timeline-1", seq: 42 },
     });
   });
+
+  it("includes the provider message id with a supported timeline cursor", () => {
+    const selected = {
+      ...assistantMessage("assistant-1", 2, "msg-assistant-1"),
+      timelineCursor: { epoch: "timeline-1", seq: 42 },
+    };
+
+    expect(
+      resolveAssistantTurnForkBoundary({
+        items: [selected],
+        startIndex: 0,
+        supportsTimelineCursor: true,
+      }),
+    ).toEqual({
+      boundaryCursor: { epoch: "timeline-1", seq: 42 },
+      boundaryMessageId: "msg-assistant-1",
+    });
+  });
+
+  it("falls back to the provider message id when timeline cursors are unsupported", () => {
+    const selected = {
+      ...assistantMessage("assistant-1", 2, "msg-assistant-1"),
+      timelineCursor: { epoch: "timeline-1", seq: 42 },
+    };
+
+    expect(
+      resolveAssistantTurnForkBoundary({
+        items: [selected],
+        startIndex: 0,
+        supportsTimelineCursor: false,
+      }),
+    ).toEqual({ boundaryMessageId: "msg-assistant-1" });
+  });
+
+  it("does not offer an unavailable boundary", () => {
+    expect(
+      resolveAssistantTurnForkBoundary({
+        items: [assistantMessage("assistant-1", 2)],
+        startIndex: 0,
+        supportsTimelineCursor: false,
+      }),
+    ).toBeUndefined();
+  });
 });

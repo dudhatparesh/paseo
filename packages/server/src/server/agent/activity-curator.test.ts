@@ -398,8 +398,10 @@ second line'`,
 
   it("selects a synthetic assistant error by its timeline cursor", () => {
     const result = buildAgentForkContextAttachment({
-      timelineEpoch: "timeline-1",
-      boundaryCursor: { epoch: "timeline-1", seq: 2 },
+      cursorBoundary: {
+        timelineEpoch: "timeline-1",
+        cursor: { epoch: "timeline-1", seq: 2 },
+      },
       rows: [
         row(1, { type: "user_message", text: "Try the task", messageId: "user-1" }),
         row(2, { type: "assistant_message", text: "[System Error] provider failed" }),
@@ -415,6 +417,18 @@ second line'`,
     expect(result.boundaryMessageId).toBeNull();
     expect(result.attachment.text).toContain("[System Error] provider failed");
     expect(result.attachment.text).not.toContain("This belongs to a later turn.");
+  });
+
+  it("rejects a cursor from a previous timeline epoch", () => {
+    expect(() =>
+      buildAgentForkContextAttachment({
+        cursorBoundary: {
+          timelineEpoch: "timeline-2",
+          cursor: { epoch: "timeline-1", seq: 2 },
+        },
+        rows: [row(2, { type: "assistant_message", text: "Stale result." })],
+      }),
+    ).toThrow("Selected timeline position is no longer available.");
   });
 
   it("rejects missing assistant boundaries instead of silently using the wrong context", () => {
