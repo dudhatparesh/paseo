@@ -228,8 +228,26 @@ export function ensureNodePtySpawnHelperExecutableForCurrentPlatform(
   }
 }
 
+// The user's login shell from the passwd database. Daemons launched without a
+// shell environment (Docker entrypoints via gosu, systemd units) have no $SHELL,
+// but the passwd entry still knows the right shell. Returns null when the
+// platform or runtime cannot provide one (Windows, containers running an
+// unknown uid with no passwd entry).
+function readLoginShell(): string | null {
+  try {
+    const shell = userInfo().shell;
+    return shell && shell.trim().length > 0 ? shell : null;
+  } catch {
+    return null;
+  }
+}
+
 export function resolveDefaultTerminalShell(
-  options: { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv } = {},
+  options: {
+    platform?: NodeJS.Platform;
+    env?: NodeJS.ProcessEnv;
+    getLoginShell?: () => string | null;
+  } = {},
 ): string {
   const platform = options.platform ?? process.platform;
   const env = options.env ?? process.env;
@@ -238,7 +256,8 @@ export function resolveDefaultTerminalShell(
     return env.ComSpec || env.COMSPEC || "C:\\Windows\\System32\\cmd.exe";
   }
 
-  return env.SHELL || "/bin/sh";
+  const getLoginShell = options.getLoginShell ?? readLoginShell;
+  return env.SHELL || getLoginShell() || "/bin/sh";
 }
 
 export interface ResolvedTerminalCommand {
