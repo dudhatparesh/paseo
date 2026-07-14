@@ -1161,7 +1161,7 @@ export class AgentManager {
     this.assertAcceptingAgentRegistrations();
     let existing = this.requireSessionAgent(agentId);
     if (this.hasInFlightRun(agentId)) {
-      await this.cancelAgentRun(agentId);
+      await this.cancelAgentRunBefore(agentId, "reload");
       existing = this.requireSessionAgent(agentId);
     }
     const rehydrateFromDisk = options?.rehydrateFromDisk ?? false;
@@ -1984,7 +1984,7 @@ export class AgentManager {
 
     return async function* replaceRunForwarder(this: AgentManager) {
       try {
-        await this.cancelAgentRun(agentId);
+        await this.cancelAgentRunBefore(agentId, "replace");
         const nextRun = this.streamAgent(agentId, prompt, options);
         for await (const event of nextRun) {
           yield event;
@@ -2248,6 +2248,16 @@ export class AgentManager {
     return true;
   }
 
+  private async cancelAgentRunBefore(
+    agentId: string,
+    action: "reload" | "replace" | "rewind",
+  ): Promise<void> {
+    const cancelled = await this.cancelAgentRun(agentId);
+    if (!cancelled) {
+      throw new Error(`Cannot ${action} agent while its active run cancellation is unacknowledged`);
+    }
+  }
+
   private async interruptSession(session: AgentSession, agentId: string): Promise<boolean> {
     try {
       const result = await this.waitWithTimeout({
@@ -2303,7 +2313,7 @@ export class AgentManager {
     const hadActiveRun =
       Boolean(agent.activeForegroundTurnId) || this.foregroundRuns.hasPendingRun(agentId);
     if (hadActiveRun) {
-      await this.cancelAgentRun(agentId);
+      await this.cancelAgentRunBefore(agentId, "rewind");
     }
 
     const lock = this.foregroundRuns.createPendingRun(agentId);

@@ -3804,6 +3804,7 @@ export class CodexAppServerAgentSession implements AgentSession {
 
     const turnId = this.createTurnId();
     this.activeForegroundTurnId = turnId;
+    this.currentTurnId = null;
 
     try {
       this.logTurnStartSummary({
@@ -4195,7 +4196,10 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   async interrupt(): Promise<void> {
-    if (!this.client || !this.currentThreadId || !this.currentTurnId) return;
+    if (!this.client || !this.currentThreadId || !this.activeForegroundTurnId) return;
+    if (!this.currentTurnId) {
+      throw new Error("Cannot interrupt Codex before turn/started identifies the active turn");
+    }
     await this.client.request(
       "turn/interrupt",
       {

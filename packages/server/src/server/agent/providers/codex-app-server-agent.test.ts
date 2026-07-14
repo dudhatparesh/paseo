@@ -2541,6 +2541,32 @@ describe("Codex app-server provider", () => {
     }
   });
 
+  test("rejects an interrupt until Codex identifies the accepted turn", async () => {
+    const appServer = createFakeCodexAppServer();
+    const session = new CodexAppServerAgentSession(
+      createConfig({ cwd: "/workspace/project" }),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+    );
+
+    try {
+      const resultPromise = session.run("Start working.");
+      await appServer.waitForTurnStart();
+
+      await expect(session.interrupt()).rejects.toThrow(
+        "Cannot interrupt Codex before turn/started identifies the active turn",
+      );
+
+      appServer.startsTurn({ threadId: "thread-1", turnId: "turn-identified-late" });
+      appServer.completeTurn();
+      await resultPromise;
+      appServer.assertNoErrors();
+    } finally {
+      await session.close();
+    }
+  });
+
   test("never replaces the root identity with an early child thread start", () => {
     const session = createSession();
 
