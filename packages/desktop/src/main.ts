@@ -49,15 +49,17 @@ import { setupApplicationMenu } from "./features/menu.js";
 import {
   BROWSER_NEW_TAB_REQUEST_EVENT,
   getPaseoBrowserIdForWebContents,
-  getPaseoBrowserWebContents,
+  getPaseoBrowserWebContentsForHostWindow,
+  getPaseoBrowserWebviewRegistry,
   handleBrowserWindowOpenRequest,
   listRegisteredPaseoBrowserIds,
   readBrowserIdFromWebviewAttach,
   registerBrowserWebviewNavigationGuards,
-  unregisterPaseoBrowser,
+  unregisterPaseoBrowserFromHost,
   registerPaseoBrowserWorkspace,
   registerPaseoBrowserWebContents,
   setWorkspaceActivePaseoBrowserId,
+  unregisterPaseoBrowserHost,
 } from "./features/browser-webviews/index.js";
 import { parseOpenProjectPathFromArgv } from "./open-project-routing.js";
 import { PendingOpenProjectStore } from "./pending-open-project-store.js";
@@ -117,7 +119,7 @@ function readActiveBrowserInput(
 }
 
 const pendingBrowserWebviewIdsByHostWebContentsId = new Map<number, string[]>();
-const browserKeyboard = new BrowserKeyboard();
+const browserKeyboard = new BrowserKeyboard(getPaseoBrowserWebviewRegistry());
 browserKeyboard.registerIpc();
 
 function showBrowserWebviewContextMenu(
@@ -279,9 +281,9 @@ ipcMain.handle("paseo:browser:register-workspace-browser", (_event, rawInput: un
   }
 });
 
-ipcMain.handle("paseo:browser:unregister-workspace-browser", (_event, browserId: unknown) => {
+ipcMain.handle("paseo:browser:unregister-workspace-browser", (event, browserId: unknown) => {
   if (typeof browserId === "string" && browserId.trim().length > 0) {
-    unregisterPaseoBrowser(browserId.trim());
+    unregisterPaseoBrowserFromHost(event.sender.id, browserId.trim());
   }
 });
 
@@ -292,7 +294,7 @@ ipcMain.handle("paseo:browser:set-workspace-active-browser", (event, rawInput: u
   }
 });
 
-ipcMain.handle("paseo:browser:open-devtools", (_event, browserId: unknown) => {
+ipcMain.handle("paseo:browser:open-devtools", (event, browserId: unknown) => {
   if (typeof browserId !== "string" || browserId.trim().length === 0) {
     const result = {
       ok: false,
@@ -303,7 +305,7 @@ ipcMain.handle("paseo:browser:open-devtools", (_event, browserId: unknown) => {
     log.warn("[browser-devtools] open-devtools.invalid", result);
     return result;
   }
-  const contents = getPaseoBrowserWebContents(browserId);
+  const contents = getPaseoBrowserWebContentsForHostWindow(browserId, event.sender.id);
   if (!contents) {
     const result = {
       ok: false,
@@ -343,11 +345,11 @@ ipcMain.handle("paseo:browser:clear-partition", async (_event, browserId: unknow
 
 ipcMain.handle(
   "paseo:browser:capture-element",
-  async (_event, browserId: unknown, rect: unknown) => {
+  async (event, browserId: unknown, rect: unknown) => {
     if (typeof browserId !== "string" || browserId.trim().length === 0) {
       return null;
     }
-    const contents = getPaseoBrowserWebContents(browserId);
+    const contents = getPaseoBrowserWebContentsForHostWindow(browserId, event.sender.id);
     if (!contents || contents.isDestroyed()) {
       return null;
     }
@@ -536,6 +538,7 @@ async function createWindow(
   mainWindow.on("closed", () => {
     pendingOpenProjectStore.delete(webContentsId);
     pendingBrowserWebviewIdsByHostWebContentsId.delete(webContentsId);
+    unregisterPaseoBrowserHost(webContentsId);
     browserKeyboard.detachHost(webContentsId);
   });
 
@@ -594,7 +597,6 @@ async function createWindow(
         hostWebContentsId: mainWindow.webContents.id,
       });
       browserKeyboard.attach({
-        browserId,
         contents,
         hostContents: mainWindow.webContents,
       });

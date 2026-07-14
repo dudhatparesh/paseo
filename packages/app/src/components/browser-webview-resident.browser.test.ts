@@ -2,11 +2,16 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   clearResidentBrowserWebviewsForTests,
   ensureResidentBrowserWebview,
+  getResidentBrowserWebview,
   prepareBrowserWebview,
   releaseResidentBrowserWebview,
   removeResidentBrowserWebview,
   takeResidentBrowserWebview,
 } from "./browser-webview-resident";
+import {
+  setCommandCenterFocusRestoreElement,
+  takeCommandCenterFocusRestoreElement,
+} from "../utils/command-center-focus-restore";
 
 const RESIDENT_HOST_ID = "paseo-browser-resident-webviews";
 
@@ -184,6 +189,19 @@ describe("resident browser webviews", () => {
 
     expect(webview).toBe(visibleWebview);
     expect(document.getElementById(RESIDENT_HOST_ID)).toBeNull();
+  });
+
+  it("finds the originating browser webview for focus restoration", () => {
+    const webview = ensureResidentBrowserWebview({
+      browserId: "browser-focus",
+      url: "https://example.com",
+    });
+
+    setCommandCenterFocusRestoreElement(getResidentBrowserWebview("browser-focus"));
+
+    expect(takeCommandCenterFocusRestoreElement()).toBe(webview);
+
+    expect(getResidentBrowserWebview("browser-missing")).toBeNull();
   });
 
   it("removes a resident webview when its browser tab closes", () => {

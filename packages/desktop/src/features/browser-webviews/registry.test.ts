@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PaseoBrowserWebviewRegistry } from "./registry.js";
 
 describe("PaseoBrowserWebviewRegistry", () => {
-  it("keeps one authoritative webContents target per browserId", () => {
+  it("keeps one authoritative webContents target per host and browser", () => {
     const registry = new PaseoBrowserWebviewRegistry();
 
     registry.registerWebContents({
@@ -24,7 +24,11 @@ describe("PaseoBrowserWebviewRegistry", () => {
 
     expect(registry.getBrowserIdForWebContents(1)).toBeNull();
     expect(registry.getBrowserIdForWebContents(2)).toBe("browser-a");
-    expect(registry.getWebContentsIdForBrowser("browser-a")).toBe(2);
+    expect(registry.getRegistrationForWebContents(2)).toEqual({
+      browserId: "browser-a",
+      hostWebContentsId: 101,
+    });
+    expect(registry.getWebContentsIdForBrowserInHostWindow(101, "browser-a")).toBe(2);
     expect(registry.getWorkspaceId("browser-a")).toBe("workspace-a");
     expect(registry.getActiveBrowserIdForHostWindow(101)).toBe("browser-a");
   });
@@ -44,7 +48,7 @@ describe("PaseoBrowserWebviewRegistry", () => {
     });
     registry.unregisterWebContents(1);
 
-    expect(registry.getWebContentsIdForBrowser("browser-a")).toBe(2);
+    expect(registry.getWebContentsIdForBrowserInHostWindow(101, "browser-a")).toBe(2);
   });
 
   it("returns the active browser only from the requested host window", () => {
@@ -142,6 +146,52 @@ describe("PaseoBrowserWebviewRegistry", () => {
     expect(registry.getActiveBrowserIdForHostWindow(202)).toBe("browser-a");
     expect(registry.getWebContentsIdForBrowserInHostWindow(101, "browser-a")).toBe(11);
     expect(registry.getWebContentsIdForBrowserInHostWindow(202, "browser-a")).toBe(22);
+  });
+
+  it("removes only the closing host's same-browser guest", () => {
+    const registry = new PaseoBrowserWebviewRegistry();
+
+    registry.registerWebContents({
+      webContentsId: 11,
+      browserId: "browser-a",
+      hostWebContentsId: 101,
+    });
+    registry.registerWebContents({
+      webContentsId: 22,
+      browserId: "browser-a",
+      hostWebContentsId: 202,
+    });
+
+    registry.unregisterHostWebContents(101);
+
+    expect(registry.getRegistrationForWebContents(11)).toBeNull();
+    expect(registry.getWebContentsIdForBrowserInHostWindow(101, "browser-a")).toBeNull();
+    expect(registry.getRegistrationForWebContents(22)).toEqual({
+      browserId: "browser-a",
+      hostWebContentsId: 202,
+    });
+    expect(registry.getWebContentsIdForBrowserInHostWindow(202, "browser-a")).toBe(22);
+  });
+
+  it("unregisters a browser only from the requesting host", () => {
+    const registry = new PaseoBrowserWebviewRegistry();
+    registry.registerWebContents({
+      webContentsId: 11,
+      browserId: "browser-a",
+      hostWebContentsId: 101,
+    });
+    registry.registerWebContents({
+      webContentsId: 22,
+      browserId: "browser-a",
+      hostWebContentsId: 202,
+    });
+    registry.registerWorkspace({ browserId: "browser-a", workspaceId: "workspace-a" });
+
+    registry.unregisterBrowserFromHost(101, "browser-a");
+
+    expect(registry.getWebContentsIdForBrowserInHostWindow(101, "browser-a")).toBeNull();
+    expect(registry.getWebContentsIdForBrowserInHostWindow(202, "browser-a")).toBe(22);
+    expect(registry.getWorkspaceId("browser-a")).toBe("workspace-a");
   });
 
   it("keeps another host's active browser when one guest is destroyed", () => {

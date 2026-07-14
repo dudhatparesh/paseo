@@ -46,9 +46,11 @@ export function readBrowserIdFromWebviewAttach(input: {
 }
 
 export function listRegisteredPaseoBrowserIds(): string[] {
-  return browserRegistry
-    .listBrowserIds()
-    .filter((browserId) => getPaseoBrowserWebContents(browserId));
+  return browserRegistry.listBrowserIds();
+}
+
+export function getPaseoBrowserWebviewRegistry(): PaseoBrowserWebviewRegistry {
+  return browserRegistry;
 }
 
 export function registerPaseoBrowserWebContents({
@@ -85,14 +87,20 @@ export function unregisterPaseoBrowser(browserId: string): void {
   browserRegistry.unregisterBrowser(browserId);
 }
 
+export function unregisterPaseoBrowserFromHost(hostWebContentsId: number, browserId: string): void {
+  browserRegistry.unregisterBrowserFromHost(hostWebContentsId, browserId);
+}
+
+export function unregisterPaseoBrowserHost(hostWebContentsId: number): void {
+  browserRegistry.unregisterHostWebContents(hostWebContentsId);
+}
+
 export function getPaseoBrowserWorkspaceId(browserId: string): string | null {
   return browserRegistry.getWorkspaceId(browserId);
 }
 
 export function listRegisteredPaseoBrowserIdsForWorkspace(workspaceId: string): string[] {
-  return browserRegistry
-    .listBrowserIdsForWorkspace(workspaceId)
-    .filter((browserId) => getPaseoBrowserWebContents(browserId));
+  return browserRegistry.listBrowserIdsForWorkspace(workspaceId);
 }
 
 export function setWorkspaceActivePaseoBrowserId(input: {
@@ -107,8 +115,14 @@ export function getWorkspaceActivePaseoBrowserId(workspaceId: string): string | 
   return browserRegistry.getMostRecentActiveBrowserIdForWorkspace(workspaceId);
 }
 
-export function getPaseoBrowserWebContents(browserId: string): WebContents | null {
-  const contentsId = browserRegistry.getWebContentsIdForBrowser(browserId);
+export function getPaseoBrowserWebContentsForHostWindow(
+  browserId: string,
+  hostWebContentsId: number,
+): WebContents | null {
+  const contentsId = browserRegistry.getWebContentsIdForBrowserInHostWindow(
+    hostWebContentsId,
+    browserId,
+  );
   if (contentsId === null) {
     return null;
   }

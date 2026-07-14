@@ -3,6 +3,7 @@ import {
   getPaseoBrowserIdForWebContents,
   registerPaseoBrowserWebContents,
   unregisterPaseoBrowser,
+  unregisterPaseoBrowserFromHost,
 } from "./index.js";
 
 class FakeRegisteredWebContents {
@@ -75,5 +76,29 @@ describe("registerPaseoBrowserWebContents", () => {
     expect(() => contents.destroy()).not.toThrow();
 
     expect(getPaseoBrowserIdForWebContents(liveIdentityWithSameId)).toBeNull();
+  });
+
+  test("unregisters a browser only from its requesting host", () => {
+    const firstContents = new FakeRegisteredWebContents(9003);
+    const secondContents = new FakeRegisteredWebContents(9004);
+    registerPaseoBrowserWebContents({
+      contents: firstContents,
+      browserId: "browser-shared-hosts",
+      hostWebContentsId: 1001,
+    });
+    registerPaseoBrowserWebContents({
+      contents: secondContents,
+      browserId: "browser-shared-hosts",
+      hostWebContentsId: 1002,
+    });
+
+    unregisterPaseoBrowserFromHost(1001, "browser-shared-hosts");
+
+    expect(getPaseoBrowserIdForWebContents(new LiveWebContentsIdentity(9003))).toBeNull();
+    expect(getPaseoBrowserIdForWebContents(new LiveWebContentsIdentity(9004))).toBe(
+      "browser-shared-hosts",
+    );
+
+    unregisterPaseoBrowser("browser-shared-hosts");
   });
 });
