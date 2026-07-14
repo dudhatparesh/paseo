@@ -73,6 +73,8 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
   menu: {
     showContextMenu: (input?: Record<string, unknown>) =>
       ipcRenderer.invoke("paseo:menu:showContextMenu", input),
+    setCapturingShortcut: (capturing: boolean) =>
+      ipcRenderer.invoke("paseo:menu:set-capturing-shortcut", capturing),
   },
   browser: {
     setShortcutPolicy: (input: BrowserKeyboardPolicy) =>
