@@ -581,7 +581,9 @@ async function createWindow(
       pendingBrowserWebviewIdsByHostWebContentsId.set(mainWindow.webContents.id, [browserId]);
     }
     webPreferences.nodeIntegration = false;
-    webPreferences.nodeIntegrationInSubFrames = false;
+    // The sandboxed keyboard preload must run in every frame so focused iframes keep
+    // the same page-first shortcut boundary. Node integration remains disabled.
+    webPreferences.nodeIntegrationInSubFrames = true;
     webPreferences.nodeIntegrationInWorker = false;
     webPreferences.contextIsolation = true;
     webPreferences.sandbox = true;
