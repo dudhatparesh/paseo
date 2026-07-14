@@ -115,6 +115,13 @@ export function getWorkspaceActivePaseoBrowserId(workspaceId: string): string | 
   return browserRegistry.getMostRecentActiveBrowserIdForWorkspace(workspaceId);
 }
 
+export function getWorkspaceActivePaseoBrowserIdForHostWindow(
+  workspaceId: string,
+  hostWebContentsId: number,
+): string | null {
+  return browserRegistry.getActiveBrowserIdForWorkspaceInHostWindow(hostWebContentsId, workspaceId);
+}
+
 export function getPaseoBrowserWebContentsForHostWindow(
   browserId: string,
   hostWebContentsId: number,

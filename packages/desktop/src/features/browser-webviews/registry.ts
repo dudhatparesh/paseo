@@ -149,6 +149,13 @@ export class PaseoBrowserWebviewRegistry {
     );
   }
 
+  public getActiveBrowserIdForWorkspaceInHostWindow(
+    hostWebContentsId: number,
+    workspaceId: string,
+  ): string | null {
+    return this.activeBrowserIdsByHostWindow.get(hostWebContentsId)?.get(workspaceId) ?? null;
+  }
+
   public getMostRecentActiveBrowserIdForWorkspace(workspaceId: string): string | null {
     const activeBrowserIdsByHostWindow = Array.from(this.activeBrowserIdsByHostWindow.values());
     for (let index = activeBrowserIdsByHostWindow.length - 1; index >= 0; index -= 1) {

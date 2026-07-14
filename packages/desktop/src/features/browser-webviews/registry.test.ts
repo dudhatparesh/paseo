@@ -77,6 +77,12 @@ describe("PaseoBrowserWebviewRegistry", () => {
 
     expect(registry.getActiveBrowserIdForHostWindow(101)).toBe("browser-first-window");
     expect(registry.getActiveBrowserIdForHostWindow(202)).toBe("browser-second-window");
+    expect(registry.getActiveBrowserIdForWorkspaceInHostWindow(101, "workspace-a")).toBe(
+      "browser-first-window",
+    );
+    expect(registry.getActiveBrowserIdForWorkspaceInHostWindow(202, "workspace-a")).toBe(
+      "browser-second-window",
+    );
   });
 
   it("keeps active updates and clears inside their owning host window", () => {
