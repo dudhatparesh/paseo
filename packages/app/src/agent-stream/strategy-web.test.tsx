@@ -25,8 +25,6 @@ vi.hoisted(() => {
   });
 });
 
-vi.mock("@/components/use-web-scrollbar", () => ({ useWebElementScrollbar: () => null }));
-
 function userMessage(index: number): StreamItem {
   return {
     kind: "user_message",
